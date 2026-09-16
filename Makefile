@@ -19,7 +19,7 @@ $(OUT): $(SRC) src/euclid.h
 	$(CC) $(CFLAGS) -o $(OUT) $(SRC) $(LDFLAGS)
 
 test: src/euclid.c src/euclid_test.c src/euclid.h
-	$(CC) -O0 -g -Wall -Wextra -std=c99 -Isrc -o /tmp/euclid_test src/euclid.c src/euclid_test.c
+	$(CC) -O0 -g -Wall -Wextra -std=c99 -Isrc -Ithird_party/clap/include -o /tmp/euclid_test src/euclid.c src/euclid_test.c
 	/tmp/euclid_test
 
 install: $(OUT)
