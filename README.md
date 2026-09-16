@@ -21,9 +21,6 @@ Each of the 8 tracks has:
 
 Global clock: **Rate** (1/4, 1/8, 1/16, 1/32), **Swing**, **Gate %**.
 
-**MIDI Learn**: set Learn to a track (or Fill) and play notes into the
-plugin — those pitches become the notes that get triggered.
-
 ## Build
 
 Needs a C99 compiler and git.
