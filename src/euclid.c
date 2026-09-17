@@ -1,6 +1,4 @@
 #include "euclid.h"
-#include <string.h>
-#include <stdio.h>
 
 /* Bresenham-style even distribution:
      hit(i) = ((i * pulses) % steps) < pulses

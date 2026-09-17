@@ -1,15 +1,5 @@
 #include "euclid.h"
 
-#include <clap/clap.h>
-#include <clap/ext/gui.h>
-#include <clap/ext/posix-fd-support.h>
-#include <X11/Xlib.h>
-
-#include <math.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-
 /* Euclid RPE — C99 CLAP Euclidean MIDI sequencer.
    Silent stereo audio + one note output. Place it on a MIDI / instrument
    track immediately before a drum machine or sampler; the plugin emits

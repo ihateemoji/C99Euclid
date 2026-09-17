@@ -2,18 +2,30 @@
 #define EUCLID_DOT_H
 
 #include <stdint.h>
-#include <X11/Xlib.h>
-#include <clap/ext/gui.h>
-#include <clap/ext/posix-fd-support.h>
 #include <stddef.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <math.h>
+#include <time.h>
+#include <unistd.h>
+#include <sys/timerfd.h>
+
 #include <X11/Xlib.h>
-#include <clap/ext/posix-fd-support.h>
+#include <X11/Xutil.h>
+
+#include <clap/clap.h>
 #include <clap/host.h>
 #include <clap/ext/gui.h>
-#include <clap/ext/posix-fd-support.h>
 #include <clap/ext/log.h>
 #include <clap/ext/params.h>
+#include <clap/ext/posix-fd-support.h>
 #include <clap/ext/state.h>
+
+#ifndef M_PI
+#define M_PI 3.14159265358979323846264338327950288
+#endif
 
 /* Euclid RPE — pure C99 Euclidean rhythm engine.
    Distributes `pulses` hits as evenly as possible across `steps`

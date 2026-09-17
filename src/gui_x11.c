@@ -1,24 +1,9 @@
 #define _GNU_SOURCE
-#include <string.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <stdbool.h>
-#include <X11/Xlib.h>
-#include <X11/Xutil.h>
-#include <math.h>
-#include <sys/timerfd.h>
-#include <unistd.h>
-#include <time.h>
-
 #include "euclid.h"
 
 /* define the dimensionality of the GUI */
 #define EU_GUI_W 1180
 #define EU_GUI_H 680
-
-#ifndef M_PI
-#define M_PI 3.14159265358979323846264338327950288
-#endif
 
 static unsigned long eu_col(int r, int g, int b) {
     return ((unsigned long)r << 16) |

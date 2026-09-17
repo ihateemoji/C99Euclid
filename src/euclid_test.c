@@ -1,7 +1,4 @@
 #include "euclid.h"
-#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
 
 static void dump(const uint8_t *p, int n, char *out)
 {
