@@ -1,5 +1,4 @@
 #define _GNU_SOURCE
-#include "euclid.h"
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -11,9 +10,11 @@
 #include <unistd.h>
 #include <time.h>
 
+#include "euclid.h"
+
+/* define the dimensionality of the GUI */
 #define EU_GUI_W 1180
 #define EU_GUI_H 680
-#define _GNU_SOURCE
 
 static unsigned long eu_col(int r, int g, int b) {
     return ((unsigned long)r << 16) |
@@ -106,7 +107,7 @@ static void eu_gui_paint(eu_plug_t *plug) {
         eu_text(plug, lx + 58, row_y + 20, buf, fg);
 
         /* param cells */
-        int cx0 = lx + 120;
+        int cx0 = lx + 100;
         int cy0 = row_y + 30;
 
         snprintf(buf, sizeof(buf), "ST %d", tr->steps);
@@ -233,7 +234,7 @@ static void eu_gui_click(eu_plug_t *plug, int x, int y) {
 
         /* param cells */
         int cy0 = row_y + 30;
-        int cx0 = lx + 120;
+        int cx0 = lx + 100;
 
         if (y >= cy0 && y < cy0 + cell_h) {
             if (x >= cx0 && x < cx0 + 14) {
@@ -326,7 +327,7 @@ static void eu_gui_wheel(eu_plug_t *plug, int x, int y, int dir) {
         }
 
         int cy0 = row_y + 30;
-        int cx0 = lx + 120;
+        int cx0 = lx + 100;
 
         if (y >= cy0 && y < cy0 + cell_h) {
             int v;
