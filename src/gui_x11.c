@@ -16,6 +16,10 @@
 #define EU_GUI_W 1180
 #define EU_GUI_H 680
 
+#ifndef M_PI
+#define M_PI 3.14159265358979323846264338327950288
+#endif
+
 static unsigned long eu_col(int r, int g, int b) {
     return ((unsigned long)r << 16) |
            ((unsigned long)g << 8) | (unsigned long)b;
@@ -156,31 +160,33 @@ static void eu_gui_paint(eu_plug_t *plug) {
         int cur_step = (gstep >= 0) ? (gstep % tr->steps) : -1;
 
         for (int s = 0; s < tr->steps; s++) {
-            double ang = (s * 2.0 * 3.14159265 / tr->steps) - 1.5708;
-            int px = cx + (int)(rad * cos(ang));
-            int py = cy + (int)(rad * sin(ang));
+            double ang = (2.0 * M_PI * s / tr->steps) - M_PI / 2.0;
+            int px = (int)lround(cx + (rad-1) * cos(ang));
+            int py = (int)lround(cy + (rad-1) * sin(ang));
             int hit = plug->pat[t][s];
             int is_playhead = (s == cur_step);
-            int is_active_now = is_playhead && hit && plug->voices[t].live &&
-                                (plug->voices[t].pitch == tr->note);
-
+            int is_active_now = is_playhead && hit;
             if (is_active_now) {
                 /* currently firing step - bright green */
                 XSetForeground(plug->dpy, plug->gc, green);
-                XFillArc(plug->dpy, plug->win, plug->gc, px - 9, py - 9, 18, 18, 0, 360 * 64);
+                XFillArc(plug->dpy, plug->win, plug->gc,
+                                        px - 9, py - 9, 18, 18, 0, 360 * 64);
                 XSetForeground(plug->dpy, plug->gc, fg);
-                XDrawArc(plug->dpy, plug->win, plug->gc, px - 11, py - 11, 22, 22, 0, 360 * 64);
+                XDrawArc(plug->dpy, plug->win, plug->gc,
+                                        px - 11, py - 11, 22, 22, 0, 360 * 64);
             } else if (hit) {
                 XSetForeground(plug->dpy, plug->gc, acc);
-                XFillArc(plug->dpy, plug->win, plug->gc, px - 6, py - 6, 12, 12, 0, 360 * 64);
+                XFillArc(plug->dpy, plug->win, plug->gc,
+                                        px - 6, py - 6, 12, 12, 0, 360 * 64);
             } else {
                 XSetForeground(plug->dpy, plug->gc, mut);
-                XFillArc(plug->dpy, plug->win, plug->gc, px - 4, py - 4, 8, 8, 0, 360 * 64);
+                XFillArc(plug->dpy, plug->win, plug->gc,
+                                        px - 4, py - 4, 8, 8, 0, 360 * 64);
             }
-
             if (is_playhead) {
                 XSetForeground(plug->dpy, plug->gc, fg);
-                XDrawArc(plug->dpy, plug->win, plug->gc, px - 8, py - 8, 16, 16, 0, 360 * 64);
+                XDrawArc(plug->dpy, plug->win, plug->gc,
+                                        px - 8, py - 8, 16, 16, 0, 360 * 64);
             }
         }
     }
@@ -245,13 +251,17 @@ static void eu_gui_click(eu_plug_t *plug, int x, int y) {
                 tr->pulses = tr->pulses > 0 ? tr->pulses - 1 : tr->steps;
             } else if (x >= cx0 + cell_w + 20 && x < cx0 + 2*cell_w + 6) {
                 tr->pulses = (tr->pulses + 1) % (tr->steps + 1);
-            } else if (x >= cx0 + 2*(cell_w + 6) && x < cx0 + 2*(cell_w + 6) + 14) {
+            } else if (x >= cx0 + 2*(cell_w + 6) &&
+                                            x < cx0 + 2*(cell_w + 6) + 14) {
                 tr->rotate = tr->rotate > 0 ? tr->rotate - 1 : tr->steps - 1;
-            } else if (x >= cx0 + 2*(cell_w + 6) + 14 && x < cx0 + 3*cell_w + 6) {
+            } else if (x >= cx0 + 2*(cell_w + 6) + 14 &&
+                                            x < cx0 + 3*cell_w + 6) {
                 tr->rotate = (tr->rotate + 1) % tr->steps;
-            } else if (x >= cx0 + 3*(cell_w + 6) && x < cx0 + 3*(cell_w + 6) + 14) {
+            } else if (x >= cx0 + 3*(cell_w + 6) &&
+                                            x < cx0 + 3*(cell_w + 6) + 14) {
                 tr->vel = tr->vel > 1 ? tr->vel - 10 : 127;
-            } else if (x >= cx0 + 3*(cell_w + 6) + 14 && x < cx0 + 4*cell_w + 6) {
+            } else if (x >= cx0 + 3*(cell_w + 6) + 14 &&
+                                            x < cx0 + 4*cell_w + 6) {
                 tr->vel = ((tr->vel + 10) % 127) + 1;
             }
             plug->dirty = 1;
@@ -263,12 +273,14 @@ static void eu_gui_click(eu_plug_t *plug, int x, int y) {
         if (y >= row_y && y < row_y + 26 &&
             x >= lx + 8 && x < lx + 52) {
             if (tr->mute) {
-                /* currently muted -> allow unmuting only if previous is active */
+                /* currently muted -> 
+                        allow unmuting only if previous is active */
                 if (t == 0 || plug->st.tr[t-1].mute == 0) {
                     tr->mute = 0;
                 }
             } else {
-                /* currently active -> allow muting and force all later tracks off */
+                /* currently active ->
+                        allow muting and force all later tracks off */
                 tr->mute = 1;
                 for (int k = t + 1; k < EU_TRACKS; k++) {
                     plug->st.tr[k].mute = 1;
@@ -332,21 +344,49 @@ static void eu_gui_wheel(eu_plug_t *plug, int x, int y, int dir) {
         if (y >= cy0 && y < cy0 + cell_h) {
             int v;
             if (x >= cx0 && x < cx0 + 14) {
-                v = (int)tr->steps + dir; if (v<1) v=1; if (v>32) v=32; tr->steps = (uint8_t)v;
+                v = (int)tr->steps + dir;
+                if (v<1) v=1;
+                if (v>32) v=32;
+                tr->steps = (uint8_t)v;
             } else if (x >= cx0 + 14 && x < cx0 + cell_w) {
-                v = (int)tr->steps + dir; if (v<1) v=1; if (v>32) v=32; tr->steps = (uint8_t)v;
+                v = (int)tr->steps + dir;
+                if (v<1) v=1;
+                if (v>32) v=32;
+                tr->steps = (uint8_t)v;
             } else if (x >= cx0 + cell_w + 6 && x < cx0 + cell_w + 20) {
-                v = (int)tr->pulses + dir; if (v<0) v=0; if (v>tr->steps) v=tr->steps; tr->pulses = (uint8_t)v;
+                v = (int)tr->pulses + dir;
+                if (v<0) v=0;
+                if (v>tr->steps) v=tr->steps;
+                tr->pulses = (uint8_t)v;
             } else if (x >= cx0 + cell_w + 20 && x < cx0 + 2*cell_w + 6) {
-                v = (int)tr->pulses + dir; if (v<0) v=0; if (v>tr->steps) v=tr->steps; tr->pulses = (uint8_t)v;
-            } else if (x >= cx0 + 2*(cell_w + 6) && x < cx0 + 2*(cell_w + 6) + 14) {
-                v = (int)tr->rotate + dir; if (v<0) v=0; if (v>=tr->steps) v=tr->steps-1; tr->rotate = (uint8_t)v;
-            } else if (x >= cx0 + 2*(cell_w + 6) + 14 && x < cx0 + 3*cell_w + 6) {
-                v = (int)tr->rotate + dir; if (v<0) v=0; if (v>=tr->steps) v=tr->steps-1; tr->rotate = (uint8_t)v;
-            } else if (x >= cx0 + 3*(cell_w + 6) && x < cx0 + 3*(cell_w + 6) + 14) {
-                v = (int)tr->vel + dir*5; if (v<1) v=1; if (v>127) v=127; tr->vel = (uint8_t)v;
-            } else if (x >= cx0 + 3*(cell_w + 6) + 14 && x < cx0 + 4*cell_w + 6) {
-                v = (int)tr->vel + dir*5; if (v<1) v=1; if (v>127) v=127; tr->vel = (uint8_t)v;
+                v = (int)tr->pulses + dir;
+                if (v<0) v=0;
+                if (v>tr->steps) v=tr->steps;
+                tr->pulses = (uint8_t)v;
+            } else if (x >= cx0 + 2*(cell_w + 6) &&
+                                          x < cx0 + 2*(cell_w + 6) + 14) {
+                v = (int)tr->rotate + dir;
+                if (v<0) v=0;
+                if (v>=tr->steps) v=tr->steps-1;
+                tr->rotate = (uint8_t)v;
+            } else if (x >= cx0 + 2*(cell_w + 6) + 14 &&
+                                          x < cx0 + 3*cell_w + 6) {
+                v = (int)tr->rotate + dir;
+                if (v<0) v=0;
+                if (v>=tr->steps) v=tr->steps-1;
+                tr->rotate = (uint8_t)v;
+            } else if (x >= cx0 + 3*(cell_w + 6) &&
+                                          x < cx0 + 3*(cell_w + 6) + 14) {
+                v = (int)tr->vel + dir*5;
+                if (v<1) v=1;
+                if (v>127) v=127;
+                tr->vel = (uint8_t)v;
+            } else if (x >= cx0 + 3*(cell_w + 6) + 14 &&
+                                          x < cx0 + 4*cell_w + 6) {
+                v = (int)tr->vel + dir*5;
+                if (v<1) v=1;
+                if (v>127) v=127;
+                tr->vel = (uint8_t)v;
             }
             plug->dirty = 1;
             eu_gui_paint(plug);
@@ -356,13 +396,16 @@ static void eu_gui_wheel(eu_plug_t *plug, int x, int y, int dir) {
 }
 
 /* CLAP GUI + POSIX FD implementation */
-static bool eu_gui_is_api_supported(const clap_plugin_t *p, const char *api, bool f) {
+static bool eu_gui_is_api_supported(const clap_plugin_t *p,
+                                            const char *api, bool f) {
     (void)p; (void)f; return api && strcmp(api, CLAP_WINDOW_API_X11) == 0;
 }
-static bool eu_gui_get_preferred_api(const clap_plugin_t *p, const char **api, bool *f) {
+static bool eu_gui_get_preferred_api(const clap_plugin_t *p,
+                                            const char **api, bool *f) {
     (void)p; *api = CLAP_WINDOW_API_X11; *f = false; return true;
 }
-static bool eu_gui_create(const clap_plugin_t *plugin, const char *api, bool f) {
+static bool eu_gui_create(const clap_plugin_t *plugin,
+                                    const char *api, bool f) {
     eu_plug_t *plug = (eu_plug_t *)plugin->plugin_data;
     (void)f;
     if (api && strcmp(api, CLAP_WINDOW_API_X11) != 0) return false;
@@ -373,7 +416,7 @@ static bool eu_gui_create(const clap_plugin_t *plugin, const char *api, bool f) 
     plug->gui_w = EU_GUI_W;
     plug->gui_h = EU_GUI_H;
     plug->win = XCreateSimpleWindow(plug->dpy, root, 0, 0,
-                                    (unsigned)plug->gui_w, (unsigned)plug->gui_h, 0,
+                            (unsigned)plug->gui_w, (unsigned)plug->gui_h, 0,
                                     eu_col(18,18,22), eu_col(18,18,22));
     plug->gc = XCreateGC(plug->dpy, plug->win, 0, NULL);
     XSelectInput(plug->dpy, plug->win,
@@ -382,7 +425,7 @@ static bool eu_gui_create(const clap_plugin_t *plugin, const char *api, bool f) 
     if (plug->host_fd && plug->host_fd->register_fd)
         plug->host_fd->register_fd(plug->host, plug->xfd, CLAP_POSIX_FD_READ);
 
-    /* 30 Hz timer for smooth playhead animation */
+    /* timer for smooth playhead animation */
     plug->timer_fd = timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK);
     if (plug->timer_fd >= 0) {
         struct itimerspec ts;
@@ -391,7 +434,8 @@ static bool eu_gui_create(const clap_plugin_t *plugin, const char *api, bool f) 
         ts.it_value = ts.it_interval;
         timerfd_settime(plug->timer_fd, 0, &ts, NULL);
         if (plug->host_fd && plug->host_fd->register_fd)
-            plug->host_fd->register_fd(plug->host, plug->timer_fd, CLAP_POSIX_FD_READ);
+            plug->host_fd->register_fd(plug->host, plug->timer_fd,
+                                                CLAP_POSIX_FD_READ);
     }
 
     plug->gui_created = 1;
@@ -411,47 +455,80 @@ static void eu_gui_destroy(const clap_plugin_t *plugin) {
     plug->dpy = NULL; plug->win = 0; plug->gc = 0;
     plug->gui_created = 0; plug->gui_visible = 0; plug->xfd = -1;
 }
-static bool eu_gui_set_scale(const clap_plugin_t *p, double s){(void)p;(void)s;return false;}
-static bool eu_gui_get_size(const clap_plugin_t *plugin, uint32_t *w, uint32_t *h) {
+static bool eu_gui_set_scale(const clap_plugin_t *p, double s){
+    (void)p;
+    (void)s;
+    return false;
+}
+static bool eu_gui_get_size(const clap_plugin_t *plugin,
+                                            uint32_t *w, uint32_t *h) {
     eu_plug_t *plug = (eu_plug_t *)plugin->plugin_data;
     *w = (uint32_t)plug->gui_w; *h = (uint32_t)plug->gui_h; return true;
 }
 static bool eu_gui_can_resize(const clap_plugin_t *p){(void)p;return true;}
-static bool eu_gui_get_resize_hints(const clap_plugin_t *p, clap_gui_resize_hints_t *h){
-    (void)p; h->can_resize_horizontally=true; h->can_resize_vertically=true;
-    h->preserve_aspect_ratio=false; h->aspect_ratio_width=820; h->aspect_ratio_height=560; return true;
-}
-static bool eu_gui_adjust_size(const clap_plugin_t *p, uint32_t *w, uint32_t *h){
-    (void)p; if(*w<560)*w=560; if(*h<360)*h=360; return true;
-}
-static bool eu_gui_set_size(const clap_plugin_t *plugin, uint32_t w, uint32_t h) {
-    eu_plug_t *plug = (eu_plug_t *)plugin->plugin_data;
-    plug->gui_w = (int)w; plug->gui_h = (int)h;
-    if (plug->dpy && plug->win) { XResizeWindow(plug->dpy, plug->win, w, h); eu_gui_paint(plug); }
+static bool eu_gui_get_resize_hints(const clap_plugin_t *p,
+                                        clap_gui_resize_hints_t *h){
+    (void)p;
+    h->can_resize_horizontally=true;
+    h->can_resize_vertically=true;
+    h->preserve_aspect_ratio=true;
+    h->aspect_ratio_width=820;
+    h->aspect_ratio_height=560;
     return true;
 }
-static bool eu_gui_set_parent(const clap_plugin_t *plugin, const clap_window_t *window) {
+static bool eu_gui_adjust_size(const clap_plugin_t *p,
+                                    uint32_t *w, uint32_t *h){
+    (void)p;
+    if(*w<560)*w=560;
+    if(*h<360)*h=360;
+    return true;
+}
+static bool eu_gui_set_size(const clap_plugin_t *plugin,
+                                        uint32_t w, uint32_t h) {
     eu_plug_t *plug = (eu_plug_t *)plugin->plugin_data;
-    if (!window || !plug->dpy || strcmp(window->api, CLAP_WINDOW_API_X11) != 0) return false;
+    plug->gui_w = (int)w; plug->gui_h = (int)h;
+    if (plug->dpy && plug->win) {
+        XResizeWindow(plug->dpy, plug->win, w, h);
+        eu_gui_paint(plug); 
+    }
+    return true;
+}
+static bool eu_gui_set_parent(const clap_plugin_t *plugin,
+                                        const clap_window_t *window) {
+    eu_plug_t *plug = (eu_plug_t *)plugin->plugin_data;
+    if (!window || !plug->dpy ||
+            strcmp(window->api, CLAP_WINDOW_API_X11) != 0) return false;
     XReparentWindow(plug->dpy, plug->win, (Window)window->x11, 0, 0);
     XMapWindow(plug->dpy, plug->win); XFlush(plug->dpy); return true;
 }
-static bool eu_gui_set_transient(const clap_plugin_t *p, const clap_window_t *w){(void)p;(void)w;return true;}
-static void eu_gui_suggest_title(const clap_plugin_t *plugin, const char *title) {
+static bool eu_gui_set_transient(const clap_plugin_t *p,
+                    const clap_window_t *w) {
+    (void)p;
+    (void)w;
+    return true;
+}
+static void eu_gui_suggest_title(const clap_plugin_t *plugin,
+                                                    const char *title) {
     eu_plug_t *plug = (eu_plug_t *)plugin->plugin_data;
-    if (plug->dpy && plug->win && title) XStoreName(plug->dpy, plug->win, title);
+    if (plug->dpy && plug->win && title) {
+        XStoreName(plug->dpy, plug->win, title);
+    }
 }
 static bool eu_gui_show(const clap_plugin_t *plugin) {
     eu_plug_t *plug = (eu_plug_t *)plugin->plugin_data;
     if (!plug->dpy || !plug->win) return false;
-    XMapWindow(plug->dpy, plug->win); plug->gui_visible = 1; eu_gui_paint(plug); return true;
+    XMapWindow(plug->dpy, plug->win);
+    plug->gui_visible = 1;
+    eu_gui_paint(plug);
+    return true;
 }
 static bool eu_gui_hide(const clap_plugin_t *plugin) {
     eu_plug_t *plug = (eu_plug_t *)plugin->plugin_data;
     if (plug->dpy && plug->win) XUnmapWindow(plug->dpy, plug->win);
     plug->gui_visible = 0; return true;
 }
-static void eu_gui_on_fd(const clap_plugin_t *plugin, int fd, clap_posix_fd_flags_t flags) {
+static void eu_gui_on_fd(const clap_plugin_t *plugin, int fd,
+                                            clap_posix_fd_flags_t flags) {
     (void)fd; (void)flags;
     eu_plug_t *plug = (eu_plug_t *)plugin->plugin_data;
     if (!plug->dpy) return;
@@ -471,11 +548,13 @@ static void eu_gui_on_fd(const clap_plugin_t *plugin, int fd, clap_posix_fd_flag
         if (ev.type == Expose) need_redraw = true;
         else if (ev.type == ButtonPress) {
             if (ev.xbutton.button == 4 || ev.xbutton.button == 5)
-                eu_gui_wheel(plug, ev.xbutton.x, ev.xbutton.y, ev.xbutton.button==4?1:-1);
+                eu_gui_wheel(plug, ev.xbutton.x, ev.xbutton.y,
+                                                ev.xbutton.button==4?1:-1);
             else if (ev.xbutton.button == 1)
                 eu_gui_click(plug, ev.xbutton.x, ev.xbutton.y);
         } else if (ev.type == ConfigureNotify) {
-            plug->gui_w = ev.xconfigure.width; plug->gui_h = ev.xconfigure.height;
+            plug->gui_w = ev.xconfigure.width;
+            plug->gui_h = ev.xconfigure.height;
             need_redraw = true;
         }
     }
