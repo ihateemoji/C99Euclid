@@ -645,7 +645,8 @@ static clap_process_status eu_process(const clap_plugin_t *plugin,
         int32_t samp;
         int gate_samp;
 
-        if (gs == plug->last_gstep) continue;
+        plug->last_gstep = gs;
+        plug->dirty = 1;
 
         /* delay odd steps for swing (classic 16th swing) */
         if (plug->st.swing > 0 && (gs & 1))
@@ -710,8 +711,6 @@ static clap_process_status eu_process(const clap_plugin_t *plugin,
                 plug->voices[t].off_abs  = plug->abs_sample + (int64_t)samp + (int64_t)gate_samp;
             }
         }
-        plug->last_gstep = gs;
-        plug->dirty = 1;
     }
 
     if (nev > 1) qsort(evs, (size_t)nev, sizeof(evs[0]), ev_cmp);
