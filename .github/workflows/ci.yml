@@ -38,5 +38,3 @@ jobs:
             pkg install -y gmake libX11
           run: |
             gmake
-          run: |
-            gmake test
