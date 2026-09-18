@@ -1,61 +1,33 @@
 # C99Euclid
 
-A **pure C99 CLAP plugin** that fires MIDI notes on Euclidean rhythms.
-It is a small clone of the Euclidean engine in HY-RPE2: you give it notes
-and a step/trigger count, and it spreads the hits as evenly as possible.
-
-Drop it on a MIDI / instrument track **immediately before a drum machine
-or sampler**. The plugin itself is silent — it only emits note-ons.
-
-## What you set
-
-Each of the 8 tracks has:
-
-| Param | Meaning |
-| --- | --- |
-| Note | MIDI note to trigger (GM drums: 36 kick, 38 snare, 42 closed hat…) |
-| Steps | Length of the cycle (1–32) |
-| Triggers | How many hits inside that cycle (0–steps) |
-| Rotate | Shift the pattern later in the cycle |
-| Velocity / Channel / Mute | as labelled |
-
-Global clock: **Rate** (1/4, 1/8, 1/16, 1/32), **Swing**, **Gate %**.
-
-## GUI
-
-The X11 GUI follows the same drawing model as [C99Gonio](https://github.com/ihateemoji/C99Gonio):
-
-- Everything is rendered into an **offscreen Pixmap** and copied to the
-  window with a single `XCopyArea`.  That eliminates the classic
-  full-window-clear flicker at 60 fps.
-- A **CLAP timer** (`CLAP_EXT_TIMER_SUPPORT`) fires every ~16–17 ms
-  (~60 Hz) and drives continuous playhead animation.
-- On every timer tick the plugin also **syncs its window size from the
-  host parent**.  Some hosts grow their container without sending a
-  ConfigureNotify when you drag the bottom-right corner; this keeps the
-  UI filling the frame instead of leaving a black margin.
-- X11 events (Expose, ConfigureNotify, ButtonPress) arrive via the
-  connection fd registered with `CLAP_EXT_POSIX_FD_SUPPORT`.
+Minimal C99 CLAP Euclidean sequencer with a lightweight X11 GUI
 
 ## Build
 
-Needs a C99 compiler, X11 development headers (`libx11-dev` on
-Debian/Ubuntu) and git.
-
-CLAP is included as a git submodule:
-
+All you need is:
+- C99 compiler (`gcc` or `clang`)
+- X11 development headers (`libx11-dev` on Debian/Ubuntu)
+  
+CLAP is included as a git submodule, so all you need is to clone this repository:
 ```bash
-git clone --recurse-submodules https://github.com/your/repo.git
-# or after cloning:
+git clone --recurse-submodules https://github.com/ihateemoji/C99Euclid
+```
+and then simply build the code with 
+```bash
+make            
+```
+which will produce a `C99Euclid.clap` binary. You could install this binary manually or let make copy it for you into `~/.clap/C99Euclid.clap` via 
+```bash
+make install
+```
+
+Then rescan plugins in any CLAP host (Bitwig, Reaper, Ardour, Carla, …).
+
+PS: If you are like me and forget `--recurse-submodules` 9/10 times, you can just cd into the cloned directory and
+```bash
 git submodule update --init --recursive
 ```
 
-Headers are at `third_party/clap/include`.
+## Disclaimer
 
-```bash
-make
-make test
-make install    # copies C99Euclid.clap to ~/.clap
-```
-
-Then scan for plugins in Bitwig, Reaper, Ardour, or any CLAP host.
+I have very minimal experience with GUI programming, so I started this project as an opportunity to gain some. Any improvements/contributions from anyone more experienced than me will be greatly appreciated!
