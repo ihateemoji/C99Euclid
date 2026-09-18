@@ -8,6 +8,13 @@ CFLAGS  ?= -O3 -fPIC -Wall -Wextra -std=c99
 CFLAGS  += -Ithird_party/clap/include -Isrc
 LDFLAGS ?= -shared -Wl,--version-script=export.map -lm -lX11
 
+# BSD systems install packages under /usr/local
+UNAME_S := $(shell uname -s)
+ifneq (,$(filter FreeBSD OpenBSD NetBSD DragonFly,$(UNAME_S)))
+CFLAGS  += -I/usr/local/include
+LDFLAGS += -L/usr/local/lib
+endif
+
 SRC = src/euclid.c src/plugin.c src/gui_x11.c
 OUT = C99Euclid.clap
 
