@@ -1,5 +1,5 @@
 /*
- * Euclid RPE — Euclidean pattern engine
+ * C99Euclid — Euclidean pattern engine
  * Responsibilities of this file:
  *   - Bresenham / Toussaint even distribution of pulses across steps
  *   - Pattern rebuild for all tracks

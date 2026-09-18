@@ -1,5 +1,5 @@
 /*
- * Euclid RPE — pure C99 Euclidean rhythm engine + CLAP plugin
+ * C99Euclid — pure C99 Euclidean rhythm engine + CLAP plugin
  * ===========================================================
  *
  * Distributes `pulses` hits as evenly as possible across `steps`

@@ -1,4 +1,4 @@
-# Euclid RPE — C99 CLAP Euclidean MIDI sequencer
+# C99Euclid — C99 CLAP Euclidean MIDI sequencer
 #   make          build the .clap (with X11 GUI)
 #   make test     run the Euclidean engine tests
 #   make install  copy into ~/.clap
@@ -9,7 +9,7 @@ CFLAGS  += -Ithird_party/clap/include -Isrc
 LDFLAGS ?= -shared -Wl,--version-script=export.map -lm -lX11
 
 SRC = src/euclid.c src/plugin.c src/gui_x11.c
-OUT = EuclidRPE.clap
+OUT = C99Euclid.clap
 
 .PHONY: all clean test install
 
@@ -24,7 +24,7 @@ test: src/euclid.c src/euclid_test.c src/euclid.h
 
 install: $(OUT)
 	mkdir -p "$(HOME)/.clap"
-	cp -f $(OUT) "$(HOME)/.clap/EuclidRPE.clap"
+	cp -f $(OUT) "$(HOME)/.clap/C99Euclid.clap"
 
 clean:
 	rm -f $(OUT) /tmp/euclid_test

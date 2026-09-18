@@ -1,6 +1,6 @@
 #include "euclid.h"
 
-/* Euclid RPE — C99 CLAP Euclidean MIDI sequencer.
+/* C99Euclid — C99 CLAP Euclidean MIDI sequencer.
    Silent stereo audio + one note output. Place it on a MIDI / instrument
    track immediately before a drum machine or sampler; the plugin emits
    note-ons on Euclidean hits. Incoming notes can be learned onto tracks. */
@@ -750,9 +750,9 @@ static const char *s_features[] = {
 
 static const clap_plugin_descriptor_t s_desc = {
     .clap_version = CLAP_VERSION_INIT,
-    .id          = "com.euclid.rpe",
-    .name        = "Euclid RPE",
-    .vendor      = "Euclid",
+    .id          = "com.c99euclid.rpe",
+    .name        = "C99Euclid",
+    .vendor      = "C99Euclid",
     .url         = "",
     .manual_url  = "",
     .support_url = "",

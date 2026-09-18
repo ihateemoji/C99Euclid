@@ -1,4 +1,4 @@
-# Euclid RPE
+# C99Euclid
 
 A **pure C99 CLAP plugin** that fires MIDI notes on Euclidean rhythms.
 It is a small clone of the Euclidean engine in HY-RPE2: you give it notes
@@ -30,6 +30,10 @@ The X11 GUI follows the same drawing model as [C99Gonio](https://github.com/ihat
   full-window-clear flicker at 60 fps.
 - A **CLAP timer** (`CLAP_EXT_TIMER_SUPPORT`) fires every ~16–17 ms
   (~60 Hz) and drives continuous playhead animation.
+- On every timer tick the plugin also **syncs its window size from the
+  host parent**.  Some hosts grow their container without sending a
+  ConfigureNotify when you drag the bottom-right corner; this keeps the
+  UI filling the frame instead of leaving a black margin.
 - X11 events (Expose, ConfigureNotify, ButtonPress) arrive via the
   connection fd registered with `CLAP_EXT_POSIX_FD_SUPPORT`.
 
@@ -51,7 +55,7 @@ Headers are at `third_party/clap/include`.
 ```bash
 make
 make test
-make install    # copies EuclidRPE.clap to ~/.clap
+make install    # copies C99Euclid.clap to ~/.clap
 ```
 
 Then scan for plugins in Bitwig, Reaper, Ardour, or any CLAP host.

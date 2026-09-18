@@ -1,5 +1,5 @@
 /*
- * Euclid RPE — X11 GUI (tracks + concentric Euclidean rings)
+ * C99Euclid — X11 GUI (tracks + concentric Euclidean rings)
  *
  * Drawing model
  * -------------
@@ -14,6 +14,14 @@
  * ConfigureNotify, ButtonPress) are delivered via the X connection fd
  * registered with CLAP_EXT_POSIX_FD_SUPPORT and also trigger a paint
  * when needed.
+ *
+ * Parent-size sync
+ * ----------------
+ * On every timer tick we also call eu_sync_size_from_parent().  Some
+ * hosts grow their container without sending a ConfigureNotify to the
+ * child (typical when dragging the bottom-right corner).  Matching our
+ * window to the parent's client size keeps the UI filling the frame
+ * instead of leaving a black margin.
  *
  * Layout
  * ------
@@ -133,7 +141,7 @@ static void eu_gui_paint(eu_plug_t *plug) {
 
     /* Background */
     eu_fill(plug, 0, 0, W, H, bg);
-    eu_text(plug, 24, 28, "EUCLID RPE", fg);
+    eu_text(plug, 24, 28, "C99Euclid", fg);
     eu_text(plug, W - 58, 28, "CLAP", mut);
 
     char buf[64];
@@ -686,6 +694,47 @@ static bool eu_gui_hide(const clap_plugin_t *plugin) {
     return true;
 }
 
+static void eu_sync_size_from_parent(eu_plug_t *plug) {
+    /* If the host grows its container without resizing our child window
+       (common when dragging the bottom-right corner), match our window to
+       the parent's client size so the UI fills the frame instead of leaving
+       a black margin.
+       Inputs:
+         <*eu_plug_t> - plugin instance */
+    if (!plug->dpy || !plug->win) return;
+
+    Window root = 0, parent = 0, *kids = NULL;
+    unsigned int nkids = 0;
+    if (!XQueryTree(plug->dpy, plug->win, &root, &parent, &kids, &nkids))
+        return;
+    if (kids)
+        XFree(kids);
+
+    /* Still under root — not reparented, nothing to sync. */
+    if (!parent || parent == root)
+        return;
+
+    Window r;
+    int x, y;
+    unsigned int pw, ph, bw, depth;
+    if (!XGetGeometry(plug->dpy, parent, &r, &x, &y, &pw, &ph, &bw, &depth))
+        return;
+
+    int nw = (int)pw;
+    int nh = (int)ph;
+    if (nw < 560) nw = 560;
+    if (nh < 360) nh = 360;
+
+    /* Already matching — avoid a redundant XResizeWindow every frame. */
+    if (nw == plug->gui_w && nh == plug->gui_h)
+        return;
+
+    plug->gui_w = nw;
+    plug->gui_h = nh;
+    XResizeWindow(plug->dpy, plug->win, (unsigned)nw, (unsigned)nh);
+    /* Pixmap will be recreated on the next paint via eu_ensure_back(). */
+}
+
 static void eu_gui_on_fd(const clap_plugin_t *plugin, int fd,
                          clap_posix_fd_flags_t flags) {
     /* CLAP POSIX FD support – process pending X11 events on the
@@ -739,12 +788,15 @@ static void eu_gui_on_timer(const clap_plugin_t *plugin, clap_id timer_id) {
        Inputs:
          <*clap_plugin_t> - the plugin instance
          <timer_id>       - id of the timer that fired
-       Paints when the GUI is visible so the playhead animates smoothly. */
+       Syncs window size from the host parent (if embedded) and paints
+       when the GUI is visible so the playhead animates smoothly. */
     eu_plug_t *plug = (eu_plug_t *)plugin->plugin_data;
     if (timer_id != plug->timer_id)
         return;
-    if (plug->gui_visible && plug->dpy)
+    if (plug->gui_visible && plug->dpy) {
+        eu_sync_size_from_parent(plug);
         eu_gui_paint(plug);
+    }
 }
 
 /* Static table of CLAP GUI extension entry points. */
