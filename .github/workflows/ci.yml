@@ -1,4 +1,4 @@
-name: CI
+wname: CI
 
 on:
   push:
@@ -37,4 +37,4 @@ jobs:
           prepare: |
             pkg install -y gmake libX11
           run: |
-            gmake
+            gmake && gmake test
