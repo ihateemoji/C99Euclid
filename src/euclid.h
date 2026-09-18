@@ -1,3 +1,19 @@
+/*
+ * Euclid RPE — pure C99 Euclidean rhythm engine + CLAP plugin
+ * ===========================================================
+ *
+ * Distributes `pulses` hits as evenly as possible across `steps`
+ * (Bresenham / Toussaint), then rotates.  Used by the CLAP plugin.
+ *
+ * The plugin is silent: it only emits MIDI note-ons on Euclidean hits.
+ * Place it on a MIDI / instrument track immediately before a drum
+ * machine or sampler.
+ *
+ * GUI is driven by CLAP timer-support at ~60 Hz, drawn into an
+ * offscreen Pixmap and blitted in one shot to avoid flicker.
+ * X11 events are delivered via CLAP posix-fd-support on the
+ * connection file descriptor.
+ */
 #ifndef EUCLID_DOT_H
 #define EUCLID_DOT_H
 
@@ -8,35 +24,29 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
-#include <time.h>
 #include <unistd.h>
-#include <sys/timerfd.h>
 
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 
 #include <clap/clap.h>
-#include <clap/host.h>
-#include <clap/ext/gui.h>
-#include <clap/ext/log.h>
-#include <clap/ext/params.h>
-#include <clap/ext/posix-fd-support.h>
-#include <clap/ext/state.h>
+/* clap.h already pulls in host + all official extensions
+ * (gui, log, params, posix-fd-support, timer-support, state, …) */
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846264338327950288
 #endif
 
-/* Euclid RPE — pure C99 Euclidean rhythm engine.
-   Distributes `pulses` hits as evenly as possible across `steps`
-   (Bresenham / Toussaint), then rotates. Used by the CLAP plugin
-   and mirrored in the web lab. */
+/* ---- identity / sizes -------------------------------------------------- */
 
 #define EU_MAGIC          0x45555031u /* "EUP1" */
 #define EU_VERSION        1u
 #define EU_TRACKS         8
 #define EU_MAX_STEPS      32
 #define EU_MAX_VOICES     16
+
+#define EU_GUI_W          1180        /* default window width               */
+#define EU_GUI_H          680         /* default window height              */
 
 enum {
     EU_RATE_1_4  = 0,
@@ -52,6 +62,8 @@ enum {
     EU_LEARN_T8   = 8,
     EU_LEARN_FILL = 9   /* round-robin fill tracks from incoming notes */
 };
+
+/* ---- per-track and global state (saved via CLAP state) ----------------- */
 
 typedef struct {
     uint8_t mute;    /* 0 = play, 1 = muted */
@@ -97,14 +109,18 @@ typedef struct {
     int     ch;
 } eu_voice_t;
 
-/* Full plugin state (shared between plugin.c and gui_x11.c) */
+/* ---- full plugin instance (shared by plugin.c and gui_x11.c) ----------- */
+
 typedef struct {
+    /* CLAP boilerplate */
     clap_plugin_t plugin;
     const clap_host_t *host;
     const clap_host_log_t *host_log;
     const clap_host_params_t *host_params;
     const clap_host_state_t *host_state;
     const clap_host_gui_t *host_gui;
+    const clap_host_posix_fd_support_t *host_fd;
+    const clap_host_timer_support_t *host_timer;
 
     eu_state_t st;
     uint8_t    pat[EU_TRACKS][EU_MAX_STEPS];
@@ -122,19 +138,22 @@ typedef struct {
     eu_voice_t voices[EU_TRACKS];
 
     /* X11 GUI */
-    Display *dpy;
-    Window   win;
-    GC       gc;
-    int      gui_w, gui_h;
-    int      gui_created;
-    int      gui_visible;
-    int      xfd;
-    int      timer_fd;
-    const clap_host_posix_fd_support_t *host_fd;
+    Display   *dpy;
+    Window     win;
+    GC         gc;
+    Pixmap     back;            /* offscreen buffer — single blit, no flicker */
+    int        back_w, back_h;
+    int        gui_w, gui_h;
+    int        gui_created;
+    int        gui_visible;
+    int        xfd;             /* X connection fd registered with the host */
+    clap_id    timer_id;        /* CLAP timer for ~60 Hz redraw             */
 } eu_plug_t;
 
-/* GUI / FD extensions implemented in gui_x11.c */
+/* GUI / FD / timer extensions implemented in gui_x11.c */
 extern const clap_plugin_gui_t eu_gui_ext;
 extern const clap_plugin_posix_fd_support_t eu_posix_fd_ext;
+extern const clap_plugin_timer_support_t eu_timer_ext;
+void eu_gui_redraw(eu_plug_t *plug);
 
 #endif /* EUCLID_DOT_H */

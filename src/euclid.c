@@ -1,11 +1,26 @@
+/*
+ * Euclid RPE — Euclidean pattern engine
+ * Responsibilities of this file:
+ *   - Bresenham / Toussaint even distribution of pulses across steps
+ *   - Pattern rebuild for all tracks
+ *   - State defaults, clamping and validation
+ *   - Rate / note name helpers
+ */
 #include "euclid.h"
-
-/* Bresenham-style even distribution:
-     hit(i) = ((i * pulses) % steps) < pulses
-   For steps=8 pulses=3 this is x..x..x.  — the classic tresillo. */
 
 void euclid_pattern(uint8_t *dst, int steps, int pulses, int rotate)
 {
+    /* Fill dst[0..steps) with a Euclidean rhythm.
+       Bresenham-style even distribution:
+         hit(i) = ((i * pulses) % steps) < pulses
+       For steps=8 pulses=3 this yields x..x..x. — the classic tresillo.
+       rotate > 0 delays the pattern (circular shift right).
+       Inputs:
+         <dst>     - output buffer of at least `steps` bytes
+         <steps>   - cycle length (clamped 1..EU_MAX_STEPS)
+         <pulses>  - number of hits (clamped 0..steps)
+         <rotate>  - rotation amount (mod steps) */
+
     uint8_t tmp[EU_MAX_STEPS];
     int i, src;
 

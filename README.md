@@ -21,9 +21,22 @@ Each of the 8 tracks has:
 
 Global clock: **Rate** (1/4, 1/8, 1/16, 1/32), **Swing**, **Gate %**.
 
+## GUI
+
+The X11 GUI follows the same drawing model as [C99Gonio](https://github.com/ihateemoji/C99Gonio):
+
+- Everything is rendered into an **offscreen Pixmap** and copied to the
+  window with a single `XCopyArea`.  That eliminates the classic
+  full-window-clear flicker at 60 fps.
+- A **CLAP timer** (`CLAP_EXT_TIMER_SUPPORT`) fires every ~16–17 ms
+  (~60 Hz) and drives continuous playhead animation.
+- X11 events (Expose, ConfigureNotify, ButtonPress) arrive via the
+  connection fd registered with `CLAP_EXT_POSIX_FD_SUPPORT`.
+
 ## Build
 
-Needs a C99 compiler and git.
+Needs a C99 compiler, X11 development headers (`libx11-dev` on
+Debian/Ubuntu) and git.
 
 CLAP is included as a git submodule:
 

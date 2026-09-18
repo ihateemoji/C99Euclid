@@ -253,6 +253,8 @@ static bool eu_init(const clap_plugin_t *plugin)
         plug->host->get_extension(plug->host, CLAP_EXT_GUI);
     plug->host_fd = (const clap_host_posix_fd_support_t *)
         plug->host->get_extension(plug->host, CLAP_EXT_POSIX_FD_SUPPORT);
+    plug->host_timer = (const clap_host_timer_support_t *)
+        plug->host->get_extension(plug->host, CLAP_EXT_TIMER_SUPPORT);
     euclid_rebuild(&plug->st, plug->pat);
     plug->dirty = 0;
     plug->last_gstep = INT64_MIN;
@@ -735,6 +737,7 @@ static const void *eu_get_extension(const clap_plugin_t *plugin, const char *id)
     if (!strcmp(id, CLAP_EXT_STATE))       return &s_state;
     if (!strcmp(id, CLAP_EXT_GUI))         return &eu_gui_ext;
     if (!strcmp(id, CLAP_EXT_POSIX_FD_SUPPORT)) return &eu_posix_fd_ext;
+    if (!strcmp(id, CLAP_EXT_TIMER_SUPPORT)) return &eu_timer_ext;
     return NULL;
 }
 
