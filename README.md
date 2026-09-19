@@ -21,7 +21,7 @@ which will produce a `C99Euclid.clap` binary. You could install this binary manu
 make install
 ```
 
-Then rescan plugins in any CLAP host (Bitwig, Reaper, Ardour, Carla, …).
+Then rescan plugins in any CLAP host (Bitwig, Reaper, Ardour, …).
 
 PS: If you are like me and forget `--recurse-submodules` 9/10 times, you can just cd into the cloned directory and
 ```bash
