@@ -374,7 +374,7 @@ static void eu_gui_click(eu_plug_t *plug, int x, int y) {
         if (y >= row_y && y < row_y + 26 &&
             x >= lx + 8 && x < lx + 52) {
             if (tr->mute) {
-                /* currently muted → allow unmuting only if previous is active */
+                /* currently muted allow unmuting only if previous is active */
                 if (t == 0 || plug->st.tr[t - 1].mute == 0) {
                     tr->mute = 0;
                 }
