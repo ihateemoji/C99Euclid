@@ -129,6 +129,7 @@ static void eu_gui_paint(eu_plug_t *plug) {
 
     int W = plug->gui_w;
     int H = plug->gui_h;
+    /* TODO: Colours can be moved to the .h file's define! */
     unsigned long bg      = eu_col(24, 26, 30);
     unsigned long surf    = eu_col(38, 41, 48);
     unsigned long fg      = eu_col(240, 242, 248);
