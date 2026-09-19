@@ -142,7 +142,6 @@ static void eu_gui_paint(eu_plug_t *plug) {
     /* Background */
     eu_fill(plug, 0, 0, W, H, bg);
     eu_text(plug, 24, 28, "C99Euclid", fg);
-    eu_text(plug, W - 58, 28, "CLAP", mut);
 
     char buf[64];
     int top_y = 52;
@@ -170,7 +169,7 @@ static void eu_gui_paint(eu_plug_t *plug) {
     eu_rect(plug, lx, ly, 320, 540, acc);
     eu_text(plug, lx + 12, ly + 22, "TRACKS", fg);
 
-    int py = ly + 48;
+    int py = ly + 38;
     int cell_h = 20;
     int cell_w = 48;
 
@@ -220,12 +219,12 @@ static void eu_gui_paint(eu_plug_t *plug) {
     int vw = W - vx - 24;
     int vh = 540;
     eu_fill(plug, vx, vy, vw, vh, surf);
-    eu_text(plug, vx + 12, vy + 22, "CONCENTRIC EUCLIDEAN  -  PLAYHEAD", cyan);
+    eu_text(plug, vx + 12, vy + 22, "ACTIVATED CIRCLES", cyan);
 
     int cx = vx + vw / 2;
     int cy = vy + vh / 2 + 10;
     int base_rad = 42;
-    int rad_step = 34;
+    int rad_step = 27;
 
     int64_t gstep = plug->last_gstep;
 
@@ -309,10 +308,9 @@ static void eu_gui_click(eu_plug_t *plug, int x, int y) {
         if (x >= 24 && x < 142) {
             plug->st.rate = (plug->st.rate + 1) % EU_RATE_COUNT;
         } else if (x >= 152 && x < 252) {
-            plug->st.swing = (plug->st.swing + 5) % 80;
+            plug->st.swing = (plug->st.swing + 5) % 105;
         } else if (x >= 262 && x < 354) {
-            plug->st.gate = ((plug->st.gate + 5) % 100) + 5;
-            if (plug->st.gate > 95) plug->st.gate = 95;
+            plug->st.gate = (plug->st.gate + 5) % 105;
         } else {
             return;
         }
@@ -409,12 +407,12 @@ static void eu_gui_wheel(eu_plug_t *plug, int x, int y, int dir) {
         } else if (x >= 152 && x < 252) {
             int s = (int)plug->st.swing + dir * 5;
             if (s < 0) s = 0;
-            if (s > 75) s = 75;
+            if (s > 100) s = 100;
             plug->st.swing = (uint32_t)s;
         } else if (x >= 262 && x < 354) {
             int g = (int)plug->st.gate + dir * 5;
-            if (g < 10) g = 10;
-            if (g > 95) g = 95;
+            if (g < 5) g = 5;
+            if (g > 100) g = 100;
             plug->st.gate = (uint32_t)g;
         }
         plug->dirty = 1;

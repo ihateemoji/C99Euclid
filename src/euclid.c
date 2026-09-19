@@ -84,7 +84,7 @@ void eu_state_default(eu_state_t *st)
     st->version = EU_VERSION;
     st->rate    = EU_RATE_1_16;
     st->swing   = 0;
-    st->gate    = 40;
+    st->gate    = 100;
     st->learn   = EU_LEARN_OFF;
 
     for (t = 0; t < EU_TRACKS; t++) {
@@ -103,9 +103,9 @@ void eu_clamp(eu_state_t *st)
     int t;
 
     if (st->rate >= EU_RATE_COUNT) st->rate = EU_RATE_1_16;
-    if (st->swing > 75) st->swing = 75;
+    if (st->swing > 100) st->swing = 100;
     if (st->gate < 5) st->gate = 5;
-    if (st->gate > 95) st->gate = 95;
+    if (st->gate > 100) st->gate = 100;
     if (st->learn > EU_LEARN_FILL) st->learn = EU_LEARN_OFF;
 
     for (t = 0; t < EU_TRACKS; t++) {
