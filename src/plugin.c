@@ -768,7 +768,6 @@ static clap_process_status eu_process(const clap_plugin_t *plugin,
         int32_t samp;
         int gate_samp;
         plug->last_gstep = gs;
-        plug->dirty = 1;
         /* delay odd steps for swing (classic 16th swing) */
         if (plug->st.swing > 0 && (gs & 1))
             when += ((double)plug->st.swing / 100.0) * 0.5;
