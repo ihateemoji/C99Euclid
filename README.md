@@ -2,6 +2,8 @@
 
 Minimal C99 CLAP Euclidean sequencer with a lightweight X11 GUI
 
+![screenshot](imgs/C99Euclid.jpeg?raw=true)
+
 ## Build
 
 All you need is:
