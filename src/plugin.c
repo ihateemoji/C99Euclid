@@ -5,19 +5,18 @@
  *   - clap_entry / factory / plug-in life cycle
  *   - Euclidean clock driven by host tempo + transport
  *   - MIDI note-on/off emission on pattern hits
- *   - CLAP parameter surface (rate, swing, gate, learn, per-track fields)
+ *   - CLAP parameter surface (rate, swing, gate, per-track fields)
  *   - CLAP state save/load
- *   - note-learn from incoming MIDI
  *
  * The plug-in is silent on the audio ports; place it on a MIDI / instrument
- * track immediately before a drum machine or sampler.
+ * track immediately before a drum machine or sampler.  Notes are set in
+ * the GUI or via CLAP parameters (no MIDI learn).
  */
 #include "euclid.h"
 enum {
     PID_RATE  = 1,
     PID_SWING = 2,
     PID_GATE  = 3,
-    PID_LEARN = 4,
     PID_TRACK_BASE = 100,
     F_MUTE = 0,
     F_NOTE = 1,
@@ -29,7 +28,7 @@ enum {
     F_COUNT = 7
 };
 
-enum { EU_PARAM_COUNT = 4 + EU_TRACKS * F_COUNT };
+enum { EU_PARAM_COUNT = 3 + EU_TRACKS * F_COUNT };
 
 static clap_id field_id(int track, int field) {
     /* Build a stable CLAP parameter id for a per-track field.
@@ -95,7 +94,6 @@ static double get_param(const eu_plug_t *plug, clap_id id) {
     if (id == PID_RATE)  return (double)st->rate;
     if (id == PID_SWING) return (double)st->swing;
     if (id == PID_GATE)  return (double)st->gate;
-    if (id == PID_LEARN) return (double)st->learn;
     if (id >= PID_TRACK_BASE) {
         t = (int)((id - PID_TRACK_BASE) / 10);
         f = (int)((id - PID_TRACK_BASE) % 10);
@@ -128,7 +126,6 @@ static void apply_param(eu_plug_t *plug, clap_id id, double value) {
     if (id == PID_RATE)       st->rate  = (uint32_t)value;
     else if (id == PID_SWING) st->swing = (uint32_t)value;
     else if (id == PID_GATE)  st->gate  = (uint32_t)value;
-    else if (id == PID_LEARN) st->learn = (uint32_t)value;
     else if (id >= PID_TRACK_BASE) {
         t = (int)((id - PID_TRACK_BASE) / 10);
         f = (int)((id - PID_TRACK_BASE) % 10);
@@ -158,11 +155,11 @@ static clap_id param_id_at(uint32_t index) {
          <uint32_t> - zero-based parameter index
        Returns:
          <clap_id> - corresponding parameter identifier */
-    static const clap_id glob[4] = {
-        PID_RATE, PID_SWING, PID_GATE, PID_LEARN
+    static const clap_id glob[3] = {
+        PID_RATE, PID_SWING, PID_GATE
     };
-    if (index < 4) return glob[index];
-    index -= 4;
+    if (index < 3) return glob[index];
+    index -= 3;
     return field_id((int)(index / F_COUNT), (int)(index % F_COUNT));
 }
 
@@ -210,87 +207,28 @@ static void all_notes_off(eu_plug_t *plug,
     }
 }
 
-static void push_param_out(const clap_output_events_t *out,
-                           uint32_t time, clap_id id, double value) {
-    /* Push a parameter-value change event to the host.
-       Inputs:
-         <*clap_output_events_t> - host output event list
-         <uint32_t>              - sample offset within the block
-         <clap_id>               - parameter identifier
-         <double>                - new parameter value */
-    clap_event_param_value_t ev;
-    memset(&ev, 0, sizeof(ev));
-    ev.header.size     = (uint32_t)sizeof(ev);
-    ev.header.time     = time;
-    ev.header.space_id = CLAP_CORE_EVENT_SPACE_ID;
-    ev.header.type     = CLAP_EVENT_PARAM_VALUE;
-    ev.param_id        = id;
-    ev.cookie          = NULL;
-    ev.note_id         = -1;
-    ev.port_index      = -1;
-    ev.channel         = -1;
-    ev.key             = -1;
-    ev.value           = value;
-    out->try_push(out, &ev.header);
-}
-
-static void learn_note(eu_plug_t *plug, int32_t key,
-                       const clap_output_events_t *out, uint32_t time) {
-    /* Map an incoming MIDI note onto one or more tracks according
-       to the current learn mode.
-       Inputs:
-         <*eu_plug_t>            - plugin instance
-         <int32_t>               - MIDI key 0..127
-         <*clap_output_events_t> - host output event list (may be NULL)
-         <uint32_t>              - sample offset within the block */
-    int t;
-    if (key < 0) key = 0;
-    if (key > 127) key = 127;
-    if (plug->st.learn >= EU_LEARN_T1 && plug->st.learn <= EU_LEARN_T8) {
-        t = (int)plug->st.learn - 1;
-        plug->st.tr[t].note = (uint8_t)key;
-        plug->st.tr[t].mute = 0;
-        if (out) push_param_out(out, time, field_id(t, F_NOTE), (double)key);
-        if (out) push_param_out(out, time, field_id(t, F_MUTE), 0.0);
-        plug->dirty = 1;
-    } else if (plug->st.learn == EU_LEARN_FILL) {
-        t = plug->learn_next % EU_TRACKS;
-        plug->st.tr[t].note = (uint8_t)key;
-        plug->st.tr[t].mute = 0;
-        plug->learn_next = (t + 1) % EU_TRACKS;
-        if (out) push_param_out(out, time, field_id(t, F_NOTE), (double)key);
-        if (out) push_param_out(out, time, field_id(t, F_MUTE), 0.0);
-        plug->dirty = 1;
-    }
-}
 
 static void consume_in_events(eu_plug_t *plug,
                               const clap_input_events_t *in,
-                              const clap_output_events_t *out) {
-    /* Process host input events (parameter changes and note-ons
-       used for learning).
+                              const clap_output_events_t *out)
+{
+    /* Process host input events (parameter value changes).
        Inputs:
          <*eu_plug_t>            - plugin instance
          <*clap_input_events_t>  - host input event list
-         <*clap_output_events_t> - host output event list */
+         <*clap_output_events_t> - host output event list (unused) */
     uint32_t n, i;
+    (void)out;
     if (!in) return;
     n = in->size(in);
     for (i = 0; i < n; i++) {
         const clap_event_header_t *hdr = in->get(in, i);
-        if (!hdr || hdr->space_id != CLAP_CORE_EVENT_SPACE_ID) continue;
+        if (!hdr || hdr->space_id != CLAP_CORE_EVENT_SPACE_ID)
+            continue;
         if (hdr->type == CLAP_EVENT_PARAM_VALUE) {
             const clap_event_param_value_t *ev =
                 (const clap_event_param_value_t *)hdr;
             apply_param(plug, ev->param_id, ev->value);
-        } else if (hdr->type == CLAP_EVENT_NOTE_ON) {
-            const clap_event_note_t *ev = (const clap_event_note_t *)hdr;
-            learn_note(plug, ev->key, out, hdr->time);
-        } else if (hdr->type == CLAP_EVENT_MIDI) {
-            const clap_event_midi_t *ev = (const clap_event_midi_t *)hdr;
-            unsigned st = ev->data[0] & 0xF0u;
-            if (st == 0x90u && ev->data[2] > 0)
-                learn_note(plug, ev->data[1], out, hdr->time);
         }
     }
 }
@@ -405,17 +343,16 @@ static void eu_on_main_thread(const clap_plugin_t *plugin) {
 
 /* ----------------------------- ports ---------------------------------- */
 
-static uint32_t note_ports_count(const clap_plugin_t *plugin, bool is_input) {
-    /* Number of note ports (one input for learn, one output
-       for Euclidean triggers).
+static uint32_t note_ports_count(const clap_plugin_t *plugin,
+                                 bool is_input) {
+    /* Number of note ports (output only for Euclidean triggers).
        Inputs:
          <*clap_plugin_t> - plugin instance
          <bool>           - whether the requested ports are inputs
        Returns:
-         <uint32_t> - always 1 */
+         <uint32_t> - 0 for input, 1 for output */
     (void)plugin;
-    (void)is_input;
-    return 1;
+    return is_input ? 0 : 1;
 }
 
 static bool note_ports_get(const clap_plugin_t *plugin, uint32_t index,
@@ -433,8 +370,8 @@ static bool note_ports_get(const clap_plugin_t *plugin, uint32_t index,
     info->id = 0;
     info->supported_dialects = CLAP_NOTE_DIALECT_CLAP | CLAP_NOTE_DIALECT_MIDI;
     info->preferred_dialect = CLAP_NOTE_DIALECT_CLAP;
-    snprintf(info->name, sizeof(info->name), "%s",
-             is_input ? "Learn In" : "Trig Out");
+    if (is_input) return false;
+    snprintf(info->name, sizeof(info->name), "Trig Out");
     return true;
 }
 
@@ -521,22 +458,19 @@ static bool params_info(const clap_plugin_t *plugin, uint32_t index,
         return true;
     }
     if (id == PID_SWING) {
-        snprintf(info->name, sizeof(info->name), "Swing");
+        snprintf(info->name, sizeof(info->name), "Swing %%");
         info->flags = CLAP_PARAM_IS_STEPPED | CLAP_PARAM_IS_AUTOMATABLE;
-        info->min_value = 0; info->max_value = 75; info->default_value = 0;
+        info->min_value = 0;
+        info->max_value = 100;
+        info->default_value = 0;
         return true;
     }
     if (id == PID_GATE) {
         snprintf(info->name, sizeof(info->name), "Gate %%");
         info->flags = CLAP_PARAM_IS_STEPPED | CLAP_PARAM_IS_AUTOMATABLE;
-        info->min_value = 5; info->max_value = 95; info->default_value = 40;
-        return true;
-    }
-    if (id == PID_LEARN) {
-        snprintf(info->name, sizeof(info->name), "MIDI Learn");
-        info->min_value = 0;
-        info->max_value = EU_LEARN_FILL;
-        info->default_value = 0;
+        info->min_value = 5;
+        info->max_value = 100;
+        info->default_value = 100;
         return true;
     }
 
@@ -628,10 +562,6 @@ static bool params_value_to_text(const clap_plugin_t *plugin, clap_id id,
         snprintf(out, cap, "%d%%", v);
     } else if (id == PID_GATE) {
         snprintf(out, cap, "%d%%", v);
-    } else if (id == PID_LEARN) {
-        if (v == 0) snprintf(out, cap, "Off");
-        else if (v == EU_LEARN_FILL) snprintf(out, cap, "Fill");
-        else snprintf(out, cap, "Track %d", v);
     } else if (id >= PID_TRACK_BASE) {
         f = (int)((id - PID_TRACK_BASE) % 10);
         if (f == F_MUTE) snprintf(out, cap, "%s", v ? "Mute" : "On");

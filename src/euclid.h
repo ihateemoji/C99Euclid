@@ -87,12 +87,6 @@ enum {
     EU_RATE_COUNT = 4
 };
 
-enum {
-    EU_LEARN_OFF  = 0,  /* ignore incoming notes */
-    EU_LEARN_T1   = 1,  /* write incoming note onto track 1..8 */
-    EU_LEARN_T8   = 8,
-    EU_LEARN_FILL = 9   /* round-robin fill tracks from incoming notes */
-};
 
 /* ---- per-track and global state (saved via CLAP state) ----------------- */
 
@@ -110,9 +104,8 @@ typedef struct {
     uint32_t  magic;
     uint32_t  version;
     uint32_t  rate;     /* EU_RATE_* */
-    uint32_t  swing;    /* 0..75 percent */
-    uint32_t  gate;     /* 5..95 percent of one step */
-    uint32_t  learn;    /* EU_LEARN_* */
+    uint32_t  swing;    /* 0..100 percent */
+    uint32_t  gate;     /* 5..100 percent of one step */
     eu_track_t tr[EU_TRACKS];
 } eu_state_t;
 
@@ -163,7 +156,6 @@ typedef struct {
     int     active;
     int     processing;
     int     next_note_id;
-    int     learn_next;
     int64_t last_gstep;
 
     eu_voice_t voices[EU_TRACKS];

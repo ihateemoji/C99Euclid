@@ -102,7 +102,6 @@ void eu_state_default(eu_state_t *st) {
     st->rate    = EU_RATE_1_16;
     st->swing   = 0;
     st->gate    = 100;
-    st->learn   = EU_LEARN_OFF;
     for (t = 0; t < EU_TRACKS; t++) {
         st->tr[t].mute   = mute[t];
         st->tr[t].note   = notes[t];
@@ -128,7 +127,6 @@ void eu_clamp(eu_state_t *st) {
     if (st->swing > 100) st->swing = 100;
     if (st->gate < 5) st->gate = 5;
     if (st->gate > 100) st->gate = 100;
-    if (st->learn > EU_LEARN_FILL) st->learn = EU_LEARN_OFF;
     for (t = 0; t < EU_TRACKS; t++) {
         eu_track_t *tr = &st->tr[t];
         tr->mute = tr->mute ? 1 : 0;

@@ -336,9 +336,13 @@ static void eu_gui_click(eu_plug_t *plug, int x, int y) {
         if (x >= 24 && x < 142) {
             plug->st.rate = (plug->st.rate + 1) % EU_RATE_COUNT;
         } else if (x >= 152 && x < 252) {
-            plug->st.swing = (plug->st.swing + 5) % 105;
+            int s = (int)plug->st.swing + 5;
+            if (s > 100) s = 0;
+            plug->st.swing = (uint32_t)s;
         } else if (x >= 262 && x < 354) {
-            plug->st.gate = (plug->st.gate + 5) % 105;
+            int g = (int)plug->st.gate + 5;
+            if (g > 100) g = 5;
+            plug->st.gate = (uint32_t)g;
         } else {
             return;
         }
