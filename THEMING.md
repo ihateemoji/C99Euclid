@@ -44,11 +44,15 @@ appropriate change to `THEMING.md`).
 
 ### Amber CRT
 
+![screenshot](imgs/C99Euclid_AmberCRT.jpeg?raw=true)
+
 ```bash
 patch -p0 < themes/amber-crt.patch
 ```
 
 ### Nord
+
+![screenshot](imgs/C99Euclid_Nord.jpeg?raw=true)
 
 ```bash
 patch -p0 < themes/nord.patch
@@ -56,17 +60,23 @@ patch -p0 < themes/nord.patch
 
 ### Vintage Green
 
+![screenshot](imgs/C99Euclid_VintageGreen.jpeg?raw=true)
+
 ```bash
 patch -p0 < themes/vintage-green.patch
 ```
 
 ### Gruvbox Dark
 
+![screenshot](imgs/C99Euclid_GruvboxDark.jpeg?raw=true)
+
 ```bash
 patch -p0 < themes/gruvbox-dark.patch
 ```
 
 ### Dracula
+
+![screenshot](imgs/C99Euclid_Dracula.jpeg?raw=true)
 
 ```bash
 patch -p0 < themes/dracula.patch
