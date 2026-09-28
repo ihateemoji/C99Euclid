@@ -302,7 +302,7 @@ static void eu_gui_paint(eu_plug_t *plug) {
     }
 
     eu_text(plug, 24, H - 18,
-            "Click cells or wheel. Click note box to cycle MIDI note.", mut);
+            "Use left click or wheel to edit parameters.", mut);
 
     /* Single blit of the completed frame — no flicker. */
     if (plug->back != None) {
