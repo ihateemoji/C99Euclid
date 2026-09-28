@@ -1,10 +1,18 @@
+/*
+ * C99Euclid — CLAP entry point, MIDI sequencing, ports, state, parameters
+ *
+ * Responsibilities of this file:
+ *   - clap_entry / factory / plug-in life cycle
+ *   - Euclidean clock driven by host tempo + transport
+ *   - MIDI note-on/off emission on pattern hits
+ *   - CLAP parameter surface (rate, swing, gate, learn, per-track fields)
+ *   - CLAP state save/load
+ *   - note-learn from incoming MIDI
+ *
+ * The plug-in is silent on the audio ports; place it on a MIDI / instrument
+ * track immediately before a drum machine or sampler.
+ */
 #include "euclid.h"
-
-/* C99Euclid — C99 CLAP Euclidean MIDI sequencer.
-   Silent stereo audio + one note output. Place it on a MIDI / instrument
-   track immediately before a drum machine or sampler; the plugin emits
-   note-ons on Euclidean hits. Incoming notes can be learned onto tracks. */
-
 enum {
     PID_RATE  = 1,
     PID_SWING = 2,
@@ -23,19 +31,27 @@ enum {
 
 enum { EU_PARAM_COUNT = 4 + EU_TRACKS * F_COUNT };
 
-static clap_id field_id(int track, int field)
-{
+static clap_id field_id(int track, int field) {
+    /* Build a stable CLAP parameter id for a per-track field.
+       Inputs:
+         <int> - track index 0..EU_TRACKS-1
+         <int> - field enumerator F_MUTE..F_VEL
+       Returns:
+         <clap_id> - unique parameter identifier */
     return (clap_id)(PID_TRACK_BASE + track * 10 + field);
 }
 
-/* eu_voice_t and eu_plug_t now live in euclid.h */
-
-/* eu_plug_t is now defined in euclid.h (shared with gui_x11.c) */
-
 /* ----------------------------- stream I/O ----------------------------- */
 
-static int write_all(const clap_ostream_t *s, const void *p, uint64_t n)
-{
+static int write_all(const clap_ostream_t *s, const void *p, uint64_t n) {
+    /* Write a contiguous block of bytes to a CLAP output stream.
+       Inputs:
+         <*clap_ostream_t> - output stream supplied by the host
+         <*void>           - address of the data to write
+         <uint64_t>        - number of bytes to write
+       Returns:
+         <int> - 1 if all bytes were written successfully
+                 0 if the stream reported an error */
     const uint8_t *b = (const uint8_t *)p;
     uint64_t off = 0;
     while (off < n) {
@@ -46,8 +62,15 @@ static int write_all(const clap_ostream_t *s, const void *p, uint64_t n)
     return 1;
 }
 
-static int read_all(const clap_istream_t *s, void *p, uint64_t n)
-{
+static int read_all(const clap_istream_t *s, void *p, uint64_t n) {
+    /* Read a contiguous block of bytes from a CLAP input stream.
+       Inputs:
+         <*clap_istream_t> - input stream supplied by the host
+         <*void>           - pointer to the destination memory
+         <uint64_t>        - number of bytes to read
+       Returns:
+         <int> - 1 if all bytes were read successfully
+                 0 if the stream reported an error */
     uint8_t *b = (uint8_t *)p;
     uint64_t off = 0;
     while (off < n) {
@@ -60,8 +83,13 @@ static int read_all(const clap_istream_t *s, void *p, uint64_t n)
 
 /* ----------------------------- parameters ----------------------------- */
 
-static double get_param(const eu_plug_t *plug, clap_id id)
-{
+static double get_param(const eu_plug_t *plug, clap_id id) {
+    /* Return the current numeric value of a CLAP parameter.
+       Inputs:
+         <*eu_plug_t> - plugin instance
+         <clap_id>    - parameter identifier
+       Returns:
+         <double> - current parameter value */
     const eu_state_t *st = &plug->st;
     int t, f;
     if (id == PID_RATE)  return (double)st->rate;
@@ -88,12 +116,15 @@ static double get_param(const eu_plug_t *plug, clap_id id)
     return 0.0;
 }
 
-static void apply_param(eu_plug_t *plug, clap_id id, double value)
-{
+static void apply_param(eu_plug_t *plug, clap_id id, double value) {
+    /* Apply a host-supplied parameter change to the state.
+       Inputs:
+         <*eu_plug_t> - plugin instance
+         <clap_id>    - parameter identifier
+         <double>     - new parameter value */
     eu_state_t *st = &plug->st;
     int t, f;
     int gen = 1;
-
     if (id == PID_RATE)       st->rate  = (uint32_t)value;
     else if (id == PID_SWING) st->swing = (uint32_t)value;
     else if (id == PID_GATE)  st->gate  = (uint32_t)value;
@@ -115,16 +146,21 @@ static void apply_param(eu_plug_t *plug, clap_id id, double value)
             }
         } else gen = 0;
     } else gen = 0;
-
     if (gen) {
         eu_clamp(st);
         plug->dirty = 1;
     }
 }
 
-static clap_id param_id_at(uint32_t index)
-{
-    static const clap_id glob[4] = { PID_RATE, PID_SWING, PID_GATE, PID_LEARN };
+static clap_id param_id_at(uint32_t index) {
+    /* Map a linear parameter index to a stable clap_id.
+       Inputs:
+         <uint32_t> - zero-based parameter index
+       Returns:
+         <clap_id> - corresponding parameter identifier */
+    static const clap_id glob[4] = {
+        PID_RATE, PID_SWING, PID_GATE, PID_LEARN
+    };
     if (index < 4) return glob[index];
     index -= 4;
     return field_id((int)(index / F_COUNT), (int)(index % F_COUNT));
@@ -132,9 +168,17 @@ static clap_id param_id_at(uint32_t index)
 
 /* ----------------------------- notes ---------------------------------- */
 
-static void emit_note(const clap_output_events_t *out, uint32_t time,
-                      int on, int32_t pitch, double vel, int32_t note_id, int ch)
-{
+static void emit_note(const clap_output_events_t *out, uint32_t time, int on, 
+                         int32_t pitch, double vel, int32_t note_id, int ch) {
+    /* Push a single note-on or note-off event to the host.
+       Inputs:
+         <*clap_output_events_t> - host output event list
+         <uint32_t>              - sample offset within the block
+         <int>                   - non-zero for note-on
+         <int32_t>               - MIDI pitch
+         <double>                - velocity 0..1
+         <int32_t>               - unique note id
+         <int>                   - MIDI channel 0..15 */
     clap_event_note_t ev;
     memset(&ev, 0, sizeof(ev));
     ev.header.size     = (uint32_t)sizeof(ev);
@@ -149,8 +193,13 @@ static void emit_note(const clap_output_events_t *out, uint32_t time,
     out->try_push(out, &ev.header);
 }
 
-static void all_notes_off(eu_plug_t *plug, const clap_output_events_t *out, uint32_t time)
-{
+static void all_notes_off(eu_plug_t *plug,
+                          const clap_output_events_t *out, uint32_t time) {
+    /* Release every currently sounding voice.
+       Inputs:
+         <*eu_plug_t>            - plugin instance
+         <*clap_output_events_t> - host output event list
+         <uint32_t>              - sample offset within the block */
     int i;
     for (i = 0; i < EU_TRACKS; i++) {
         if (plug->voices[i].live) {
@@ -161,9 +210,14 @@ static void all_notes_off(eu_plug_t *plug, const clap_output_events_t *out, uint
     }
 }
 
-static void push_param_out(const clap_output_events_t *out, uint32_t time,
-                           clap_id id, double value)
-{
+static void push_param_out(const clap_output_events_t *out,
+                           uint32_t time, clap_id id, double value) {
+    /* Push a parameter-value change event to the host.
+       Inputs:
+         <*clap_output_events_t> - host output event list
+         <uint32_t>              - sample offset within the block
+         <clap_id>               - parameter identifier
+         <double>                - new parameter value */
     clap_event_param_value_t ev;
     memset(&ev, 0, sizeof(ev));
     ev.header.size     = (uint32_t)sizeof(ev);
@@ -180,12 +234,18 @@ static void push_param_out(const clap_output_events_t *out, uint32_t time,
     out->try_push(out, &ev.header);
 }
 
-static void learn_note(eu_plug_t *plug, int32_t key, const clap_output_events_t *out, uint32_t time)
-{
+static void learn_note(eu_plug_t *plug, int32_t key,
+                       const clap_output_events_t *out, uint32_t time) {
+    /* Map an incoming MIDI note onto one or more tracks according
+       to the current learn mode.
+       Inputs:
+         <*eu_plug_t>            - plugin instance
+         <int32_t>               - MIDI key 0..127
+         <*clap_output_events_t> - host output event list (may be NULL)
+         <uint32_t>              - sample offset within the block */
     int t;
     if (key < 0) key = 0;
     if (key > 127) key = 127;
-
     if (plug->st.learn >= EU_LEARN_T1 && plug->st.learn <= EU_LEARN_T8) {
         t = (int)plug->st.learn - 1;
         plug->st.tr[t].note = (uint8_t)key;
@@ -204,9 +264,15 @@ static void learn_note(eu_plug_t *plug, int32_t key, const clap_output_events_t 
     }
 }
 
-static void consume_in_events(eu_plug_t *plug, const clap_input_events_t *in,
-                              const clap_output_events_t *out)
-{
+static void consume_in_events(eu_plug_t *plug,
+                              const clap_input_events_t *in,
+                              const clap_output_events_t *out) {
+    /* Process host input events (parameter changes and note-ons
+       used for learning).
+       Inputs:
+         <*eu_plug_t>            - plugin instance
+         <*clap_input_events_t>  - host input event list
+         <*clap_output_events_t> - host output event list */
     uint32_t n, i;
     if (!in) return;
     n = in->size(in);
@@ -214,7 +280,8 @@ static void consume_in_events(eu_plug_t *plug, const clap_input_events_t *in,
         const clap_event_header_t *hdr = in->get(in, i);
         if (!hdr || hdr->space_id != CLAP_CORE_EVENT_SPACE_ID) continue;
         if (hdr->type == CLAP_EVENT_PARAM_VALUE) {
-            const clap_event_param_value_t *ev = (const clap_event_param_value_t *)hdr;
+            const clap_event_param_value_t *ev =
+                (const clap_event_param_value_t *)hdr;
             apply_param(plug, ev->param_id, ev->value);
         } else if (hdr->type == CLAP_EVENT_NOTE_ON) {
             const clap_event_note_t *ev = (const clap_event_note_t *)hdr;
@@ -230,8 +297,11 @@ static void consume_in_events(eu_plug_t *plug, const clap_input_events_t *in,
 
 /* ----------------------------- lifecycle ------------------------------ */
 
-static void rebuild_if_dirty(eu_plug_t *plug)
-{
+static void rebuild_if_dirty(eu_plug_t *plug) {
+    /* If the state was modified, clamp it, rebuild all patterns
+       and notify the host that state is dirty.
+       Inputs:
+         <*eu_plug_t> - plugin instance */
     if (!plug->dirty) return;
     eu_clamp(&plug->st);
     euclid_rebuild(&plug->st, plug->pat);
@@ -240,8 +310,12 @@ static void rebuild_if_dirty(eu_plug_t *plug)
         plug->host_state->mark_dirty(plug->host);
 }
 
-static bool eu_init(const clap_plugin_t *plugin)
-{
+static bool eu_init(const clap_plugin_t *plugin) {
+    /* Initialise the plugin instance and cache host extensions.
+       Inputs:
+         <*clap_plugin_t> - CLAP plugin instance to initialise
+       Returns:
+         <bool> - true on success */
     eu_plug_t *plug = (eu_plug_t *)plugin->plugin_data;
     plug->host_log = (const clap_host_log_t *)
         plug->host->get_extension(plug->host, CLAP_EXT_LOG);
@@ -261,14 +335,23 @@ static bool eu_init(const clap_plugin_t *plugin)
     return true;
 }
 
-static void eu_destroy(const clap_plugin_t *plugin)
-{
+static void eu_destroy(const clap_plugin_t *plugin) {
+    /* Destroy the plugin instance and free its memory.
+       Inputs:
+         <*clap_plugin_t> - CLAP plugin instance to destroy */
     free(plugin->plugin_data);
 }
 
 static bool eu_activate(const clap_plugin_t *plugin, double sr,
-                        uint32_t min_frames, uint32_t max_frames)
-{
+                        uint32_t min_frames, uint32_t max_frames) {
+    /* Activate the plugin and begin processing.
+       Inputs:
+         <*clap_plugin_t> - CLAP plugin instance
+         <double>         - host sample rate
+         <uint32_t>       - minimum audio block size
+         <uint32_t>       - maximum audio block size
+       Returns:
+         <bool> - true on success */
     eu_plug_t *plug = (eu_plug_t *)plugin->plugin_data;
     (void)min_frames; (void)max_frames;
     plug->sr = sr > 1.0 ? sr : 44100.0;
@@ -279,48 +362,72 @@ static bool eu_activate(const clap_plugin_t *plugin, double sr,
     return true;
 }
 
-static void eu_deactivate(const clap_plugin_t *plugin)
-{
+static void eu_deactivate(const clap_plugin_t *plugin) {
+    /* Deactivate the plugin instance.
+       Inputs:
+         <*clap_plugin_t> - CLAP plugin instance to deactivate */
     ((eu_plug_t *)plugin->plugin_data)->active = 0;
 }
 
-static bool eu_start_processing(const clap_plugin_t *plugin)
-{
+static bool eu_start_processing(const clap_plugin_t *plugin) {
+    /* Start audio / MIDI processing.
+       Inputs:
+         <*clap_plugin_t> - CLAP plugin instance
+       Returns:
+         <bool> - true */
     ((eu_plug_t *)plugin->plugin_data)->processing = 1;
     return true;
 }
 
-static void eu_stop_processing(const clap_plugin_t *plugin)
-{
+static void eu_stop_processing(const clap_plugin_t *plugin) {
+    /* Stop audio / MIDI processing.
+       Inputs:
+         <*clap_plugin_t> - CLAP plugin instance */
     ((eu_plug_t *)plugin->plugin_data)->processing = 0;
 }
 
-static void eu_reset(const clap_plugin_t *plugin)
-{
+static void eu_reset(const clap_plugin_t *plugin) {
+    /* Reset internal voice and clock state.
+       Inputs:
+         <*clap_plugin_t> - CLAP plugin instance */
     eu_plug_t *plug = (eu_plug_t *)plugin->plugin_data;
     memset(plug->voices, 0, sizeof(plug->voices));
     plug->abs_sample = 0;
     plug->last_gstep = INT64_MIN;
 }
 
-static void eu_on_main_thread(const clap_plugin_t *plugin)
-{
+static void eu_on_main_thread(const clap_plugin_t *plugin) {
+    /* Handle main-thread work (none required).
+       Inputs:
+         <*clap_plugin_t> - CLAP plugin instance */
     (void)plugin;
 }
 
 /* ----------------------------- ports ---------------------------------- */
 
-static uint32_t note_ports_count(const clap_plugin_t *plugin, bool is_input)
-{
+static uint32_t note_ports_count(const clap_plugin_t *plugin, bool is_input) {
+    /* Number of note ports (one input for learn, one output
+       for Euclidean triggers).
+       Inputs:
+         <*clap_plugin_t> - plugin instance
+         <bool>           - whether the requested ports are inputs
+       Returns:
+         <uint32_t> - always 1 */
     (void)plugin;
-    /* 1 in (MIDI learn) + 1 out (Euclidean triggers). */
-    return 1;
     (void)is_input;
+    return 1;
 }
 
 static bool note_ports_get(const clap_plugin_t *plugin, uint32_t index,
-                           bool is_input, clap_note_port_info_t *info)
-{
+                           bool is_input, clap_note_port_info_t *info) {
+    /* Describe one of the plugin's note ports.
+       Inputs:
+         <*clap_plugin_t>         - plugin instance
+         <uint32_t>               - requested port index
+         <bool>                   - whether the port is an input
+         <*clap_note_port_info_t> - structure to fill
+       Returns:
+         <bool> - true if the requested port exists */
     (void)plugin;
     if (index != 0) return false;
     info->id = 0;
@@ -336,15 +443,27 @@ static const clap_plugin_note_ports_t s_note_ports = {
     .get   = note_ports_get
 };
 
-static uint32_t audio_ports_count(const clap_plugin_t *plugin, bool is_input)
-{
+static uint32_t audio_ports_count(const clap_plugin_t *plugin, bool is_input) {
+    /* Number of audio ports (silent stereo out only).
+       Inputs:
+         <*clap_plugin_t> - plugin instance
+         <bool>           - whether the requested ports are inputs
+       Returns:
+         <uint32_t> - 0 for input, 1 for output */
     (void)plugin;
     return is_input ? 0 : 1;
 }
 
 static bool audio_ports_get(const clap_plugin_t *plugin, uint32_t index,
-                            bool is_input, clap_audio_port_info_t *info)
-{
+                            bool is_input, clap_audio_port_info_t *info) {
+    /* Describe the silent stereo audio output port.
+       Inputs:
+         <*clap_plugin_t>          - plugin instance
+         <uint32_t>                - requested port index
+         <bool>                    - whether the port is an input
+         <*clap_audio_port_info_t> - structure to fill
+       Returns:
+         <bool> - true if the requested port exists */
     (void)plugin;
     if (is_input || index != 0) return false;
     info->id = 0;
@@ -363,14 +482,25 @@ static const clap_plugin_audio_ports_t s_audio_ports = {
 
 /* ----------------------------- params ext ----------------------------- */
 
-static uint32_t params_count(const clap_plugin_t *plugin)
-{
+static uint32_t params_count(const clap_plugin_t *plugin) {
+    /* Number of parameters exposed by the plugin.
+       Inputs:
+         <*clap_plugin_t> - plugin instance
+       Returns:
+         <uint32_t> - total number of parameters */
     (void)plugin;
     return EU_PARAM_COUNT;
 }
 
-static bool params_info(const clap_plugin_t *plugin, uint32_t index, clap_param_info_t *info)
-{
+static bool params_info(const clap_plugin_t *plugin, uint32_t index,
+                                                clap_param_info_t *info) {
+    /* Describe one of the plugin's parameters.
+       Inputs:
+         <*clap_plugin_t>     - plugin instance
+         <uint32_t>           - requested parameter index
+         <*clap_param_info_t> - structure to fill
+       Returns:
+         <bool> - true if the requested parameter exists */
     clap_id id;
     int t, f;
     (void)plugin;
@@ -378,13 +508,16 @@ static bool params_info(const clap_plugin_t *plugin, uint32_t index, clap_param_
     memset(info, 0, sizeof(*info));
     id = param_id_at(index);
     info->id = id;
-    info->flags = CLAP_PARAM_IS_STEPPED | CLAP_PARAM_IS_AUTOMATABLE | CLAP_PARAM_IS_ENUM;
+    info->flags = CLAP_PARAM_IS_STEPPED | CLAP_PARAM_IS_AUTOMATABLE
+                | CLAP_PARAM_IS_ENUM;
     info->cookie = NULL;
     snprintf(info->module, sizeof(info->module), "Clock");
 
     if (id == PID_RATE) {
         snprintf(info->name, sizeof(info->name), "Rate");
-        info->min_value = 0; info->max_value = EU_RATE_COUNT - 1; info->default_value = EU_RATE_1_16;
+        info->min_value = 0;
+        info->max_value = EU_RATE_COUNT - 1;
+        info->default_value = EU_RATE_1_16;
         return true;
     }
     if (id == PID_SWING) {
@@ -401,7 +534,9 @@ static bool params_info(const clap_plugin_t *plugin, uint32_t index, clap_param_
     }
     if (id == PID_LEARN) {
         snprintf(info->name, sizeof(info->name), "MIDI Learn");
-        info->min_value = 0; info->max_value = EU_LEARN_FILL; info->default_value = 0;
+        info->min_value = 0;
+        info->max_value = EU_LEARN_FILL;
+        info->default_value = 0;
         return true;
     }
 
@@ -418,7 +553,9 @@ static bool params_info(const clap_plugin_t *plugin, uint32_t index, clap_param_
         snprintf(info->name, sizeof(info->name), "T%d Note", t + 1);
         info->flags = CLAP_PARAM_IS_STEPPED | CLAP_PARAM_IS_AUTOMATABLE;
         info->min_value = 0; info->max_value = 127;
-        info->default_value = (t == 0) ? 36 : (t == 1) ? 38 : (t == 2) ? 42 : 60;
+        info->default_value = (t == 0) ? 36
+                             : (t == 1) ? 38
+                             : (t == 2) ? 42 : 60;
         break;
     case F_CH:
         snprintf(info->name, sizeof(info->name), "T%d Channel", t + 1);
@@ -427,17 +564,23 @@ static bool params_info(const clap_plugin_t *plugin, uint32_t index, clap_param_
     case F_STEPS:
         snprintf(info->name, sizeof(info->name), "T%d Steps", t + 1);
         info->flags = CLAP_PARAM_IS_STEPPED | CLAP_PARAM_IS_AUTOMATABLE;
-        info->min_value = 1; info->max_value = EU_MAX_STEPS; info->default_value = 16;
+        info->min_value = 1;
+        info->max_value = EU_MAX_STEPS;
+        info->default_value = 16;
         break;
     case F_PULSES:
         snprintf(info->name, sizeof(info->name), "T%d Triggers", t + 1);
         info->flags = CLAP_PARAM_IS_STEPPED | CLAP_PARAM_IS_AUTOMATABLE;
-        info->min_value = 0; info->max_value = EU_MAX_STEPS; info->default_value = 4;
+        info->min_value = 0;
+        info->max_value = EU_MAX_STEPS;
+        info->default_value = 4;
         break;
     case F_ROT:
         snprintf(info->name, sizeof(info->name), "T%d Rotate", t + 1);
         info->flags = CLAP_PARAM_IS_STEPPED | CLAP_PARAM_IS_AUTOMATABLE;
-        info->min_value = 0; info->max_value = EU_MAX_STEPS - 1; info->default_value = 0;
+        info->min_value = 0;
+        info->max_value = EU_MAX_STEPS - 1;
+        info->default_value = 0;
         break;
     case F_VEL:
         snprintf(info->name, sizeof(info->name), "T%d Velocity", t + 1);
@@ -450,15 +593,30 @@ static bool params_info(const clap_plugin_t *plugin, uint32_t index, clap_param_
     return true;
 }
 
-static bool params_get_value(const clap_plugin_t *plugin, clap_id id, double *out)
-{
+static bool params_get_value(const clap_plugin_t *plugin, clap_id id,
+                                                            double *out) {
+    /* Return the current value of a plugin parameter.
+       Inputs:
+         <*clap_plugin_t> - plugin instance
+         <clap_id>        - parameter identifier
+         <*double>        - location to receive the value
+       Returns:
+         <bool> - true after the value has been written */
     *out = get_param((const eu_plug_t *)plugin->plugin_data, id);
     return true;
 }
 
 static bool params_value_to_text(const clap_plugin_t *plugin, clap_id id,
-                                 double value, char *out, uint32_t cap)
-{
+                                     double value, char *out, uint32_t cap) {
+    /* Convert a numeric parameter value into display text.
+       Inputs:
+         <*clap_plugin_t> - plugin instance
+         <clap_id>        - parameter identifier
+         <double>         - numeric parameter value
+         <char *>         - output text buffer
+         <uint32_t>       - capacity of the output buffer
+       Returns:
+         <bool> - true if the value was converted successfully */
     int v = (int)value;
     int f;
     char nbuf[8];
@@ -477,7 +635,9 @@ static bool params_value_to_text(const clap_plugin_t *plugin, clap_id id,
     } else if (id >= PID_TRACK_BASE) {
         f = (int)((id - PID_TRACK_BASE) % 10);
         if (f == F_MUTE) snprintf(out, cap, "%s", v ? "Mute" : "On");
-        else if (f == F_NOTE) snprintf(out, cap, "%s", eu_note_name((uint8_t)v, nbuf, sizeof nbuf));
+        else if (f == F_NOTE)
+            snprintf(out, cap, "%s",
+                     eu_note_name((uint8_t)v, nbuf, sizeof nbuf));
         else if (f == F_CH) snprintf(out, cap, "Ch %d", v + 1);
         else snprintf(out, cap, "%d", v);
     } else {
@@ -487,8 +647,15 @@ static bool params_value_to_text(const clap_plugin_t *plugin, clap_id id,
 }
 
 static bool params_text_to_value(const clap_plugin_t *plugin, clap_id id,
-                                 const char *text, double *out)
-{
+                                            const char *text, double *out) {
+    /* Convert parameter text into a numeric value.
+       Inputs:
+         <*clap_plugin_t> - plugin instance
+         <clap_id>        - parameter identifier
+         <const char *>   - text to convert
+         <*double>        - location to receive the value
+       Returns:
+         <bool> - true if text was provided and converted */
     (void)plugin; (void)id;
     if (!text) return false;
     *out = strtod(text, NULL);
@@ -497,8 +664,12 @@ static bool params_text_to_value(const clap_plugin_t *plugin, clap_id id,
 
 static void params_flush(const clap_plugin_t *plugin,
                          const clap_input_events_t *in,
-                         const clap_output_events_t *out)
-{
+                         const clap_output_events_t *out) {
+    /* Flush parameter changes and regenerate patterns.
+       Inputs:
+         <*clap_plugin_t>          - plugin instance
+         <*clap_input_events_t>    - host input event list
+         <*clap_output_events_t>   - host output event list */
     eu_plug_t *plug = (eu_plug_t *)plugin->plugin_data;
     consume_in_events(plug, in, out);
     rebuild_if_dirty(plug);
@@ -515,14 +686,26 @@ static const clap_plugin_params_t s_params = {
 
 /* ----------------------------- state ---------------------------------- */
 
-static bool state_save(const clap_plugin_t *plugin, const clap_ostream_t *stream)
-{
+static bool state_save(const clap_plugin_t *plugin,
+                            const clap_ostream_t *stream) {
+    /* Save the plugin state to the host stream.
+       Inputs:
+         <*clap_plugin_t>  - plugin instance
+         <*clap_ostream_t> - output stream supplied by the host
+       Returns:
+         <bool> - true if the complete state was written */
     eu_plug_t *plug = (eu_plug_t *)plugin->plugin_data;
     return write_all(stream, &plug->st, sizeof(plug->st)) ? true : false;
 }
 
-static bool state_load(const clap_plugin_t *plugin, const clap_istream_t *stream)
-{
+static bool state_load(const clap_plugin_t *plugin,
+                                 const clap_istream_t *stream) {
+    /* Load and validate the plugin state from the host stream.
+       Inputs:
+         <*clap_plugin_t>  - plugin instance
+         <*clap_istream_t> - input stream supplied by the host
+       Returns:
+         <bool> - true if the state was read, validated and applied */
     eu_plug_t *plug = (eu_plug_t *)plugin->plugin_data;
     eu_state_t tmp;
     if (!read_all(stream, &tmp, sizeof(tmp))) return false;
@@ -543,14 +726,17 @@ static const clap_plugin_state_t s_state = {
 
 /* ----------------------------- process -------------------------------- */
 
-static void silence(const clap_process_t *process)
-{
+static void silence(const clap_process_t *process) {
+    /* Zero every audio output buffer (plugin is silent).
+       Inputs:
+         <*clap_process_t> - current process block */
     uint32_t p, c;
     for (p = 0; p < process->audio_outputs_count; p++) {
         clap_audio_buffer_t *buf = process->audio_outputs + p;
         for (c = 0; c < buf->channel_count; c++) {
             if (buf->data32 && buf->data32[c])
-                memset(buf->data32[c], 0, process->frames_count * sizeof(float));
+                memset(buf->data32[c], 0,
+                       process->frames_count * sizeof(float));
         }
     }
 }
@@ -564,19 +750,31 @@ typedef struct {
     int ch;
 } midiev_t;
 
-static int ev_cmp(const void *a, const void *b)
-{
+static int ev_cmp(const void *a, const void *b) {
+    /* qsort comparator for midiev_t by time then on/off.
+       Inputs:
+         <*void> - left midiev_t
+         <*void> - right midiev_t
+       Returns:
+         <int> - negative / zero / positive for ordering */
     const midiev_t *x = (const midiev_t *)a;
     const midiev_t *y = (const midiev_t *)b;
     if (x->time < y->time) return -1;
     if (x->time > y->time) return 1;
-    if (x->on != y->on) return x->on - y->on; /* offs before ons */
+    if (x->on != y->on)
+        return x->on - y->on; /* offs before ons */
     return 0;
 }
 
 static clap_process_status eu_process(const clap_plugin_t *plugin,
-                                      const clap_process_t *process)
-{
+                                      const clap_process_t *process) {
+    /* Process one audio block: advance the Euclidean clock,
+       emit note-ons/offs, keep audio silent.
+       Inputs:
+         <*clap_plugin_t>  - plugin instance
+         <*clap_process_t> - current process block
+       Returns:
+         <clap_process_status> - CLAP_PROCESS_CONTINUE */
     eu_plug_t *plug = (eu_plug_t *)plugin->plugin_data;
     uint32_t frames = process->frames_count;
     int playing = 1;
@@ -586,11 +784,9 @@ static clap_process_status eu_process(const clap_plugin_t *plugin,
     midiev_t evs[256];
     int nev = 0;
     int t;
-
     consume_in_events(plug, process->in_events, process->out_events);
     rebuild_if_dirty(plug);
     silence(process);
-
     if (process->transport) {
         const clap_event_transport_t *tr = process->transport;
         if (tr->flags & CLAP_TRANSPORT_HAS_TEMPO) {
@@ -598,26 +794,23 @@ static clap_process_status eu_process(const clap_plugin_t *plugin,
         }
         playing = (tr->flags & CLAP_TRANSPORT_IS_PLAYING) ? 1 : 0;
         if (tr->flags & CLAP_TRANSPORT_HAS_BEATS_TIMELINE)
-            beats = (double)tr->song_pos_beats / (double)CLAP_BEATTIME_FACTOR;
+            beats = (double)tr->song_pos_beats
+                  / (double)CLAP_BEATTIME_FACTOR;
     }
     if (plug->tempo < 1.0) plug->tempo = 120.0;
     if (plug->sr < 1.0) plug->sr = 44100.0;
-
     if (!playing) {
         all_notes_off(plug, process->out_events, 0);
         plug->abs_sample += (int64_t)frames;
         plug->last_gstep = INT64_MIN;
         return CLAP_PROCESS_CONTINUE;
     }
-
     spb = eu_steps_per_beat(plug->st.rate);
     sp_step = (plug->sr * 60.0 / plug->tempo) / spb;
     if (sp_step < 1.0) sp_step = 1.0;
-
     if (beats >= 0.0) start = beats * spb;
     else              start = (double)plug->abs_sample / sp_step;
     end = start + (double)frames / sp_step;
-
     /* pending note-offs from earlier blocks */
     for (t = 0; t < EU_TRACKS; t++) {
         eu_voice_t *v = &plug->voices[t];
@@ -636,32 +829,26 @@ static clap_process_status eu_process(const clap_plugin_t *plugin,
             v->live = 0;
         }
     }
-
     g_begin = (int64_t)ceil(start - 1e-12);
     g_end   = (int64_t)ceil(end   - 1e-12);
     if (g_begin < 0) g_begin = 0;
-
     for (gs = g_begin; gs < g_end; gs++) {
         double when = (double)gs;
         double frac;
         int32_t samp;
         int gate_samp;
-
         plug->last_gstep = gs;
         plug->dirty = 1;
-
         /* delay odd steps for swing (classic 16th swing) */
         if (plug->st.swing > 0 && (gs & 1))
             when += ((double)plug->st.swing / 100.0) * 0.5;
-
         frac = when - start;
         samp = (int32_t)(frac * sp_step + 0.5);
         if (samp < 0) samp = 0;
         if ((uint32_t)samp >= frames) continue;
-
-        gate_samp = (int)(sp_step * ((double)plug->st.gate / 100.0));
+        gate_samp = (int)(sp_step
+                        * ((double)plug->st.gate / 100.0));
         if (gate_samp < 1) gate_samp = 1;
-
         for (t = 0; t < EU_TRACKS; t++) {
             const eu_track_t *tr = &plug->st.tr[t];
             int steps, idx;
@@ -673,7 +860,6 @@ static clap_process_status eu_process(const clap_plugin_t *plugin,
             if (idx < 0) idx += steps;
             if (!plug->pat[t][idx]) continue;
             if (nev >= 250) break;
-
             /* retrigger: off previous voice on this track first */
             if (plug->voices[t].live) {
                 evs[nev].time  = (uint32_t)samp;
@@ -710,26 +896,32 @@ static clap_process_status eu_process(const clap_plugin_t *plugin,
                 plug->voices[t].pitch    = tr->note;
                 plug->voices[t].note_id  = nid;
                 plug->voices[t].ch       = tr->ch;
-                plug->voices[t].off_abs  = plug->abs_sample + (int64_t)samp + (int64_t)gate_samp;
+                plug->voices[t].off_abs =
+                    plug->abs_sample + (int64_t)samp
+                    + (int64_t)gate_samp;
             }
         }
     }
-
     if (nev > 1) qsort(evs, (size_t)nev, sizeof(evs[0]), ev_cmp);
     for (t = 0; t < nev; t++) {
         double vel = evs[t].on ? (evs[t].vel / 127.0) : 0.0;
         emit_note(process->out_events, evs[t].time, evs[t].on,
                   evs[t].pitch, vel, evs[t].id, evs[t].ch);
     }
-
     plug->abs_sample += (int64_t)frames;
     return CLAP_PROCESS_CONTINUE;
 }
 
 /* ----------------------------- factory -------------------------------- */
 
-static const void *eu_get_extension(const clap_plugin_t *plugin, const char *id)
-{
+static const void *eu_get_extension(const clap_plugin_t *plugin,
+                                                    const char *id) {
+    /* Return a pointer to the requested CLAP extension, or NULL.
+       Inputs:
+         <*clap_plugin_t> - plugin instance
+         <const char *>   - extension identifier string
+       Returns:
+         <const void *> - extension vtable or NULL */
     (void)plugin;
     if (!strcmp(id, CLAP_EXT_NOTE_PORTS))  return &s_note_ports;
     if (!strcmp(id, CLAP_EXT_AUDIO_PORTS)) return &s_audio_ports;
@@ -750,19 +942,23 @@ static const char *s_features[] = {
 
 static const clap_plugin_descriptor_t s_desc = {
     .clap_version = CLAP_VERSION_INIT,
-    .id          = "com.c99euclid.rpe",
+    .id          = "com.ihateemoji.c99euclid",
     .name        = "C99Euclid",
-    .vendor      = "C99Euclid",
+    .vendor      = "ihateemoji",
     .url         = "",
     .manual_url  = "",
     .support_url = "",
     .version     = "1.0.0",
-    .description = "C99 Euclidean MIDI sequencer. Place before a drum machine.",
+    .description = "C99 Euclidean MIDI sequencer.",
     .features    = s_features
 };
 
-static const clap_plugin_t *eu_create(const clap_host_t *host)
-{
+static const clap_plugin_t *eu_create(const clap_host_t *host) {
+    /* Allocate and initialise a new plugin instance.
+       Inputs:
+         <*clap_host_t> - host that requested the instance
+       Returns:
+         <*clap_plugin_t> - new plugin instance, or NULL */
     eu_plug_t *plug = (eu_plug_t *)calloc(1, sizeof(eu_plug_t));
     if (!plug) return NULL;
     eu_state_default(&plug->st);
@@ -785,23 +981,39 @@ static const clap_plugin_t *eu_create(const clap_host_t *host)
     return &plug->plugin;
 }
 
-static uint32_t factory_count(const clap_plugin_factory_t *f)
-{
+static uint32_t factory_count(const clap_plugin_factory_t *f) {
+    /* Number of plugins provided by this factory.
+       Inputs:
+         <*clap_plugin_factory_t> - factory instance
+       Returns:
+         <uint32_t> - always 1 */
     (void)f;
     return 1;
 }
 
-static const clap_plugin_descriptor_t *factory_desc(const clap_plugin_factory_t *f, uint32_t index)
-{
+static const clap_plugin_descriptor_t *factory_desc(
+          const clap_plugin_factory_t *f, uint32_t index) {
+    /* Return the descriptor for the plugin at the given index.
+       Inputs:
+         <*clap_plugin_factory_t> - factory instance
+         <uint32_t>               - zero-based index
+       Returns:
+         <*clap_plugin_descriptor_t> - descriptor or NULL */
     (void)f;
     if (index != 0) return NULL;
     return &s_desc;
 }
 
-static const clap_plugin_t *factory_create(const clap_plugin_factory_t *f,
-                                           const clap_host_t *host,
-                                           const char *plugin_id)
-{
+static const clap_plugin_t *factory_create(
+    const clap_plugin_factory_t *f, const clap_host_t *host,
+                                            const char *plugin_id) {
+    /* Create a plugin instance for the given plugin id.
+       Inputs:
+         <*clap_plugin_factory_t> - factory instance
+         <*clap_host_t>           - host requesting the instance
+         <const char *>           - plugin identifier string
+       Returns:
+         <*clap_plugin_t> - new instance, or NULL */
     (void)f;
     if (!host || !plugin_id) return NULL;
     if (strcmp(plugin_id, s_desc.id) != 0) return NULL;
@@ -815,16 +1027,26 @@ static const clap_plugin_factory_t s_factory = {
     .create_plugin         = factory_create
 };
 
-static bool entry_init(const char *plugin_path)
-{
+static bool entry_init(const char *plugin_path) {
+    /* Initialise the CLAP entry point (nothing to do).
+       Inputs:
+         <const char *> - path to the plugin binary
+       Returns:
+         <bool> - true */
     (void)plugin_path;
     return true;
 }
 
-static void entry_deinit(void) {}
+static void entry_deinit(void) {
+    /* De-initialise the CLAP entry point (nothing to do). */
+}
 
-static const void *entry_get_factory(const char *factory_id)
-{
+static const void *entry_get_factory(const char *factory_id) {
+    /* Return the plugin factory for the requested factory id.
+       Inputs:
+         <const char *> - factory identifier string
+       Returns:
+         <const void *> - factory vtable, or NULL */
     if (!strcmp(factory_id, CLAP_PLUGIN_FACTORY_ID)) return &s_factory;
     return NULL;
 }

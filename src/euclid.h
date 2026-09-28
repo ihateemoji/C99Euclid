@@ -48,6 +48,37 @@
 #define EU_GUI_W          1180        /* default window width               */
 #define EU_GUI_H          680         /* default window height              */
 
+/* ---- GUI drawing constants -------------------------------------------- */
+
+/* colour helpers (RGB 0..255) — values packed via eu_col() in gui_x11.c */
+#define EU_BG_R     24
+#define EU_BG_G     26
+#define EU_BG_B     30
+#define EU_SURF_R   38
+#define EU_SURF_G   41
+#define EU_SURF_B   48
+#define EU_FG_R     240
+#define EU_FG_G     242
+#define EU_FG_B     248
+#define EU_MUT_R    95
+#define EU_MUT_G    100
+#define EU_MUT_B    110
+#define EU_ACC_R    85
+#define EU_ACC_G    145
+#define EU_ACC_B    235
+#define EU_GRID_R   52
+#define EU_GRID_G   56
+#define EU_GRID_B   64
+#define EU_CYA_R    75
+#define EU_CYA_G    195
+#define EU_CYA_B    225
+#define EU_GRN_R    95
+#define EU_GRN_G    205
+#define EU_GRN_B    145
+#define EU_NOTE_BG_R 48
+#define EU_NOTE_BG_G 52
+#define EU_NOTE_BG_B 60
+
 enum {
     EU_RATE_1_4  = 0,
     EU_RATE_1_8  = 1,

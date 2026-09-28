@@ -37,7 +37,9 @@
 static unsigned long eu_col(int r, int g, int b) {
     /* Convert 8-bit RGB components into a 24-bit X11 pixel value.
        Inputs:
-         <r,g,b> - red, green and blue components in the range 0..255
+         <int> - red component in the range 0..255
+         <int> - green component in the range 0..255
+         <int> - blue component in the range 0..255
        Returns:
          <unsigned long> - packed colour suitable for
                            XSetForeground / XFillRectangle */
@@ -87,9 +89,12 @@ static void eu_fill(eu_plug_t *p, int x, int y, int w, int h,
                     unsigned long c) {
     /* Draw a solid rectangle.
        Inputs:
-         <*eu_plug_t> - plugin instance
-         <x,y,w,h>    - top-left and size
-         <c>          - packed colour from eu_col() */
+         <*eu_plug_t>   - plugin instance
+         <int>          - x coordinate of the top-left corner
+         <int>          - y coordinate of the top-left corner
+         <int>          - width
+         <int>          - height
+         <unsigned long> - packed colour from eu_col() */
     XSetForeground(p->dpy, p->gc, c);
     XFillRectangle(p->dpy, eu_dst(p), p->gc, x, y, (unsigned)w, (unsigned)h);
 }
@@ -98,9 +103,12 @@ static void eu_rect(eu_plug_t *p, int x, int y, int w, int h,
                     unsigned long c) {
     /* Draw a one-pixel rectangle outline.
        Inputs:
-         <*eu_plug_t> - plugin instance
-         <x,y,w,h>    - top-left and size
-         <c>          - packed colour from eu_col() */
+         <*eu_plug_t>   - plugin instance
+         <int>          - x coordinate of the top-left corner
+         <int>          - y coordinate of the top-left corner
+         <int>          - width
+         <int>          - height
+         <unsigned long> - packed colour from eu_col() */
     XSetForeground(p->dpy, p->gc, c);
     XDrawRectangle(p->dpy, eu_dst(p), p->gc, x, y, (unsigned)w, (unsigned)h);
 }
@@ -109,12 +117,30 @@ static void eu_text(eu_plug_t *p, int x, int y, const char *s,
                     unsigned long c) {
     /* Draw a null-terminated string at the given coordinates.
        Inputs:
-         <*eu_plug_t> - plugin instance
-         <x,y>        - baseline origin
-         <s>          - null-terminated string
-         <c>          - packed colour from eu_col() */
+         <*eu_plug_t>   - plugin instance
+         <int>          - x coordinate of the baseline origin
+         <int>          - y coordinate of the baseline origin
+         <const char *> - null-terminated string to draw
+         <unsigned long> - packed colour from eu_col() */
     XSetForeground(p->dpy, p->gc, c);
     XDrawString(p->dpy, eu_dst(p), p->gc, x, y, s, (int)strlen(s));
+}
+
+/* ---- pattern rebuild on GUI edits ------------------------------------ */
+
+static void eu_gui_apply_dirty(eu_plug_t *plug) {
+    /* Clamp state, rebuild Euclidean patterns, and mark the host state
+       dirty so the change is visible immediately and will be saved.
+       Called after every interactive parameter change so the rings and
+       hit dots update on the next paint without waiting for the audio
+       thread.
+       Inputs:
+         <*eu_plug_t> - plugin instance */
+    eu_clamp(&plug->st);
+    euclid_rebuild(&plug->st, plug->pat);
+    plug->dirty = 1;   /* keep set so process()/flush also see it */
+    if (plug->host_state && plug->host_state->mark_dirty)
+        plug->host_state->mark_dirty(plug->host);
 }
 
 /* ---- full-frame paint -------------------------------------------------- */
@@ -129,16 +155,16 @@ static void eu_gui_paint(eu_plug_t *plug) {
 
     int W = plug->gui_w;
     int H = plug->gui_h;
-    /* TODO: Colours can be moved to the .h file's define! */
-    unsigned long bg      = eu_col(24, 26, 30);
-    unsigned long surf    = eu_col(38, 41, 48);
-    unsigned long fg      = eu_col(240, 242, 248);
-    unsigned long mut     = eu_col(95, 100, 110);
-    unsigned long acc     = eu_col(85, 145, 235);
-    unsigned long grid    = eu_col(52, 56, 64);
-    unsigned long cyan    = eu_col(75, 195, 225);
-    unsigned long green   = eu_col(95, 205, 145);
-    unsigned long note_bg = eu_col(48, 52, 60);
+    /* colours from #defines in euclid.h — edit there for theming */
+    unsigned long bg      = eu_col(EU_BG_R, EU_BG_G, EU_BG_B);
+    unsigned long surf    = eu_col(EU_SURF_R, EU_SURF_G, EU_SURF_B);
+    unsigned long fg      = eu_col(EU_FG_R, EU_FG_G, EU_FG_B);
+    unsigned long mut     = eu_col(EU_MUT_R, EU_MUT_G, EU_MUT_B);
+    unsigned long acc     = eu_col(EU_ACC_R, EU_ACC_G, EU_ACC_B);
+    unsigned long grid    = eu_col(EU_GRID_R, EU_GRID_G, EU_GRID_B);
+    unsigned long cyan    = eu_col(EU_CYA_R, EU_CYA_G, EU_CYA_B);
+    unsigned long green   = eu_col(EU_GRN_R, EU_GRN_G, EU_GRN_B);
+    unsigned long note_bg = eu_col(EU_NOTE_BG_R, EU_NOTE_BG_G, EU_NOTE_BG_B);
 
     /* Background */
     eu_fill(plug, 0, 0, W, H, bg);
@@ -301,7 +327,8 @@ static void eu_gui_click(eu_plug_t *plug, int x, int y) {
     /* Handle left-button click on a control.
        Inputs:
          <*eu_plug_t> - plugin instance
-         <x,y>        - window coordinates of the click */
+         <int>        - x window coordinate of the click
+         <int>        - y window coordinate of the click */
     int top_y = 52;
 
     /* top bar clicks */
@@ -315,7 +342,7 @@ static void eu_gui_click(eu_plug_t *plug, int x, int y) {
         } else {
             return;
         }
-        plug->dirty = 1;
+        eu_gui_apply_dirty(plug);
         eu_gui_paint(plug);
         return;
     }
@@ -333,7 +360,7 @@ static void eu_gui_click(eu_plug_t *plug, int x, int y) {
         if (y >= row_y + 6 && y < row_y + 26 &&
             x >= lx + 52 && x < lx + 108) {
             tr->note = (tr->note + 1) % 128;
-            plug->dirty = 1;
+            eu_gui_apply_dirty(plug);
             eu_gui_paint(plug);
             return;
         }
@@ -364,7 +391,7 @@ static void eu_gui_click(eu_plug_t *plug, int x, int y) {
                        x < cx0 + 4 * cell_w + 6) {
                 tr->vel = ((tr->vel + 10) % 127) + 1;
             }
-            plug->dirty = 1;
+            eu_gui_apply_dirty(plug);
             eu_gui_paint(plug);
             return;
         }
@@ -384,7 +411,7 @@ static void eu_gui_click(eu_plug_t *plug, int x, int y) {
                     plug->st.tr[k].mute = 1;
                 }
             }
-            plug->dirty = 1;
+            eu_gui_apply_dirty(plug);
             eu_gui_paint(plug);
             return;
         }
@@ -395,8 +422,9 @@ static void eu_gui_wheel(eu_plug_t *plug, int x, int y, int dir) {
     /* Handle mouse-wheel (button 4/5) over a control.
        Inputs:
          <*eu_plug_t> - plugin instance
-         <x,y>        - window coordinates
-         <dir>        - +1 (up) or -1 (down) */
+         <int>        - x window coordinate
+         <int>        - y window coordinate
+         <int>        - direction (+1 up, -1 down) */
     int top_y = 52;
     /* top bar wheel */
     if (y >= top_y && y <= top_y + 26) {
@@ -416,7 +444,7 @@ static void eu_gui_wheel(eu_plug_t *plug, int x, int y, int dir) {
             if (g > 100) g = 100;
             plug->st.gate = (uint32_t)g;
         }
-        plug->dirty = 1;
+        eu_gui_apply_dirty(plug);
         eu_gui_paint(plug);
         return;
     }
@@ -436,7 +464,7 @@ static void eu_gui_wheel(eu_plug_t *plug, int x, int y, int dir) {
             if (n < 0) n = 0;
             if (n > 127) n = 127;
             tr->note = (uint8_t)n;
-            plug->dirty = 1;
+            eu_gui_apply_dirty(plug);
             eu_gui_paint(plug);
             return;
         }
@@ -469,7 +497,7 @@ static void eu_gui_wheel(eu_plug_t *plug, int x, int y, int dir) {
                 if (v > 127) v = 127;
                 tr->vel = (uint8_t)v;
             }
-            plug->dirty = 1;
+            eu_gui_apply_dirty(plug);
             eu_gui_paint(plug);
             return;
         }
@@ -481,14 +509,26 @@ static void eu_gui_wheel(eu_plug_t *plug, int x, int y, int dir) {
 static bool eu_gui_is_api_supported(const clap_plugin_t *p,
                                     const char *api, bool f) {
     /* Report whether the requested windowing API is supported.
-       Only X11 is implemented. */
+       Only X11 is implemented.
+       Inputs:
+         <*clap_plugin_t> - plugin instance
+         <const char *>   - requested windowing API string
+         <bool>           - whether a floating window is requested
+       Returns:
+         <bool> - true if the API is supported */
     (void)p; (void)f;
     return api && strcmp(api, CLAP_WINDOW_API_X11) == 0;
 }
 
 static bool eu_gui_get_preferred_api(const clap_plugin_t *p,
                                      const char **api, bool *f) {
-    /* Prefer embedded X11. */
+    /* Prefer embedded X11.
+       Inputs:
+         <*clap_plugin_t> - plugin instance
+         <const char **>  - receives the preferred API string
+         <bool *>         - receives whether floating is preferred
+       Returns:
+         <bool> - true */
     (void)p;
     *api = CLAP_WINDOW_API_X11;
     *f = false;
@@ -497,19 +537,20 @@ static bool eu_gui_get_preferred_api(const clap_plugin_t *p,
 
 static bool eu_gui_create(const clap_plugin_t *plugin,
                           const char *api, bool f) {
-    /* CLAP GUI extension – create the X11 window and associated resources.
+    /* CLAP GUI extension – create the X11 window and associated
+       resources.  Opens the default X display, creates a simple
+       window of the default size, obtains a graphics context,
+       selects the required event masks and registers the X11
+       file descriptor with the host so that events can be
+       processed from the main thread.  A ~60 Hz CLAP timer is
+       also registered for continuous playhead animation.
        Inputs:
-         <*clap_plugin_t> - the plugin instance
-         <*api>           - requested windowing API (must be X11)
-         <is_floating>    - ignored (always embedded)
+         <*clap_plugin_t> - plugin instance
+         <const char *>   - requested windowing API (must be X11)
+         <bool>           - ignored (always embedded)
        Returns:
-         <bool> - true on success, false if the display cannot be opened or
-                  the API is not X11
-       Opens the default X display, creates a simple window of the default
-       size, obtains a graphics context, selects the required event masks
-       and registers the X11 file descriptor with the host so that events
-       can be processed from the main thread.  A ~60 Hz CLAP timer is also
-       registered for continuous playhead animation. */
+         <bool> - true on success, false if the display cannot
+                  be opened or the API is not X11 */
     eu_plug_t *plug = (eu_plug_t *)plugin->plugin_data;
     (void)f;
     if (api && strcmp(api, CLAP_WINDOW_API_X11) != 0) return false;
@@ -523,7 +564,8 @@ static bool eu_gui_create(const clap_plugin_t *plugin,
     plug->back_w = plug->back_h = 0;
     plug->win = XCreateSimpleWindow(plug->dpy, root, 0, 0,
                             (unsigned)plug->gui_w, (unsigned)plug->gui_h, 0,
-                                    eu_col(18, 18, 22), eu_col(18, 18, 22));
+                                    eu_col(EU_BG_R, EU_BG_G, EU_BG_B),
+                                    eu_col(EU_BG_R, EU_BG_G, EU_BG_B));
     /* Ask the X server to keep a backing store when the window is mapped. */
     {
         XSetWindowAttributes wa;
@@ -557,11 +599,12 @@ static bool eu_gui_create(const clap_plugin_t *plugin,
 }
 
 static void eu_gui_destroy(const clap_plugin_t *plugin) {
-    /* CLAP GUI extension – destroy the X11 window and free all resources.
+    /* CLAP GUI extension – destroy the X11 window and free all
+       resources.  Unregisters the CLAP timer and X11 fd, frees
+       the GC / pixmap, destroys the window and closes the
+       display.  All fields are reset.
        Inputs:
-         <*clap_plugin_t> - the plugin instance
-       Unregisters the CLAP timer and X11 fd, frees the GC / pixmap,
-       destroys the window and closes the display.  All fields reset. */
+         <*clap_plugin_t> - plugin instance */
     eu_plug_t *plug = (eu_plug_t *)plugin->plugin_data;
     if (plug->host_timer && plug->host_timer->unregister_timer &&
         plug->timer_id != CLAP_INVALID_ID) {
@@ -595,14 +638,25 @@ static void eu_gui_destroy(const clap_plugin_t *plugin) {
 }
 
 static bool eu_gui_set_scale(const clap_plugin_t *p, double s) {
-    /* Scale factor is currently ignored; always succeed. */
+    /* Scale factor is currently ignored; always succeed.
+       Inputs:
+         <*clap_plugin_t> - plugin instance
+         <double>         - requested scale factor
+       Returns:
+         <bool> - true */
     (void)p; (void)s;
     return true;
 }
 
 static bool eu_gui_get_size(const clap_plugin_t *plugin,
                             uint32_t *w, uint32_t *h) {
-    /* Report the current window size. */
+    /* Report the current window size.
+       Inputs:
+         <*clap_plugin_t> - plugin instance
+         <uint32_t *>     - receives width
+         <uint32_t *>     - receives height
+       Returns:
+         <bool> - true */
     eu_plug_t *plug = (eu_plug_t *)plugin->plugin_data;
     *w = (uint32_t)plug->gui_w;
     *h = (uint32_t)plug->gui_h;
@@ -610,12 +664,23 @@ static bool eu_gui_get_size(const clap_plugin_t *plugin,
 }
 
 static bool eu_gui_can_resize(const clap_plugin_t *p) {
+    /* Report whether the GUI can be resized by the host.
+       Inputs:
+         <*clap_plugin_t> - plugin instance
+       Returns:
+         <bool> - true */
     (void)p;
     return true;
 }
 
 static bool eu_gui_get_resize_hints(const clap_plugin_t *p,
                                     clap_gui_resize_hints_t *h) {
+    /* Fill in preferred resize behaviour.
+       Inputs:
+         <*clap_plugin_t>         - plugin instance
+         <*clap_gui_resize_hints_t> - structure to fill
+       Returns:
+         <bool> - true */
     (void)p;
     h->can_resize_horizontally = true;
     h->can_resize_vertically = true;
@@ -627,6 +692,13 @@ static bool eu_gui_get_resize_hints(const clap_plugin_t *p,
 
 static bool eu_gui_adjust_size(const clap_plugin_t *p,
                                uint32_t *w, uint32_t *h) {
+    /* Clamp a proposed size to the minimum dimensions.
+       Inputs:
+         <*clap_plugin_t> - plugin instance
+         <uint32_t *>     - width (clamped in place)
+         <uint32_t *>     - height (clamped in place)
+       Returns:
+         <bool> - true */
     (void)p;
     if (*w < 560) *w = 560;
     if (*h < 360) *h = 360;
@@ -635,8 +707,14 @@ static bool eu_gui_adjust_size(const clap_plugin_t *p,
 
 static bool eu_gui_set_size(const clap_plugin_t *plugin,
                             uint32_t w, uint32_t h) {
-    /* Apply a new window size, recreate the offscreen pixmap if needed,
-       and force a full repaint. */
+    /* Apply a new window size, recreate the offscreen pixmap if
+       needed, and force a full repaint.
+       Inputs:
+         <*clap_plugin_t> - plugin instance
+         <uint32_t>       - new width
+         <uint32_t>       - new height
+       Returns:
+         <bool> - true */
     eu_plug_t *plug = (eu_plug_t *)plugin->plugin_data;
     if (w < 560) w = 560;
     if (h < 360) h = 360;
@@ -652,7 +730,12 @@ static bool eu_gui_set_size(const clap_plugin_t *plugin,
 
 static bool eu_gui_set_parent(const clap_plugin_t *plugin,
                               const clap_window_t *window) {
-    /* Embed the plugin window into a host parent. */
+    /* Embed the plugin window into a host parent.
+       Inputs:
+         <*clap_plugin_t>  - plugin instance
+         <*clap_window_t>  - host parent window
+       Returns:
+         <bool> - true on success */
     eu_plug_t *plug = (eu_plug_t *)plugin->plugin_data;
     if (!window || !plug->dpy ||
             strcmp(window->api, CLAP_WINDOW_API_X11) != 0)
@@ -665,19 +748,33 @@ static bool eu_gui_set_parent(const clap_plugin_t *plugin,
 
 static bool eu_gui_set_transient(const clap_plugin_t *p,
                                  const clap_window_t *w) {
+    /* Set a transient-for parent (unused).
+       Inputs:
+         <*clap_plugin_t> - plugin instance
+         <*clap_window_t> - transient parent
+       Returns:
+         <bool> - true */
     (void)p; (void)w;
     return true;
 }
 
 static void eu_gui_suggest_title(const clap_plugin_t *plugin,
                                  const char *title) {
+    /* Suggest a window title to the X server.
+       Inputs:
+         <*clap_plugin_t> - plugin instance
+         <const char *>   - suggested title string */
     eu_plug_t *plug = (eu_plug_t *)plugin->plugin_data;
     if (plug->dpy && plug->win && title)
         XStoreName(plug->dpy, plug->win, title);
 }
 
 static bool eu_gui_show(const clap_plugin_t *plugin) {
-    /* Make the plugin window visible and paint an initial frame. */
+    /* Make the plugin window visible and paint an initial frame.
+       Inputs:
+         <*clap_plugin_t> - plugin instance
+       Returns:
+         <bool> - true on success */
     eu_plug_t *plug = (eu_plug_t *)plugin->plugin_data;
     if (!plug->dpy || !plug->win) return false;
     XMapWindow(plug->dpy, plug->win);
@@ -687,6 +784,11 @@ static bool eu_gui_show(const clap_plugin_t *plugin) {
 }
 
 static bool eu_gui_hide(const clap_plugin_t *plugin) {
+    /* Hide the plugin window.
+       Inputs:
+         <*clap_plugin_t> - plugin instance
+       Returns:
+         <bool> - true */
     eu_plug_t *plug = (eu_plug_t *)plugin->plugin_data;
     if (plug->dpy && plug->win) XUnmapWindow(plug->dpy, plug->win);
     plug->gui_visible = 0;
@@ -738,13 +840,13 @@ static void eu_gui_on_fd(const clap_plugin_t *plugin, int fd,
                          clap_posix_fd_flags_t flags) {
     /* CLAP POSIX FD support – process pending X11 events on the
        connection fd.  Timer-driven redraw is handled separately by
-       eu_gui_on_timer (CLAP_EXT_TIMER_SUPPORT).
+       eu_gui_on_timer (CLAP_EXT_TIMER_SUPPORT).  Drains the X event
+       queue.  Expose / ConfigureNotify trigger a full repaint;
+       ButtonPress is routed to the interaction handlers.
        Inputs:
-         <*clap_plugin_t>       - the plugin instance
-         <fd>                   - file descriptor that became readable
-         <clap_posix_fd_flags_t> - event flags
-       Drains the X event queue.  Expose / ConfigureNotify trigger a
-       full repaint; ButtonPress is routed to the interaction handlers. */
+         <*clap_plugin_t>        - plugin instance
+         <int>                   - file descriptor that became readable
+         <clap_posix_fd_flags_t> - event flags */
     (void)flags;
     (void)fd;
     eu_plug_t *plug = (eu_plug_t *)plugin->plugin_data;
@@ -775,7 +877,7 @@ static void eu_gui_on_fd(const clap_plugin_t *plugin, int fd,
         }
     }
     if (plug->dirty) {
-        plug->dirty = 0;
+        /* rebuild already done by eu_gui_apply_dirty on edit; just paint */
         need_redraw = true;
     }
     if (need_redraw)
@@ -784,11 +886,12 @@ static void eu_gui_on_fd(const clap_plugin_t *plugin, int fd,
 
 static void eu_gui_on_timer(const clap_plugin_t *plugin, clap_id timer_id) {
     /* CLAP timer-support – periodic redraw callback (~60 Hz).
+       Syncs window size from the host parent (if embedded) and
+       paints when the GUI is visible so the playhead animates
+       smoothly.
        Inputs:
-         <*clap_plugin_t> - the plugin instance
-         <timer_id>       - id of the timer that fired
-       Syncs window size from the host parent (if embedded) and paints
-       when the GUI is visible so the playhead animates smoothly. */
+         <*clap_plugin_t> - plugin instance
+         <clap_id>        - id of the timer that fired */
     eu_plug_t *plug = (eu_plug_t *)plugin->plugin_data;
     if (timer_id != plug->timer_id)
         return;

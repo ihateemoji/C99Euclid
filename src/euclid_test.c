@@ -1,3 +1,10 @@
+/*
+ * C99Euclid — unit tests for the Euclidean pattern engine
+ *
+ * Verifies Bresenham / Toussaint distribution and rotation against
+ * known classic patterns (tresillo, etc.).
+ */
+
 #include "euclid.h"
 
 static void dump(const uint8_t *p, int n, char *out)

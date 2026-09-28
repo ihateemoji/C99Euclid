@@ -28,6 +28,13 @@ PS: If you are like me and forget `--recurse-submodules` 9/10 times, you can jus
 git submodule update --init --recursive
 ```
 
+## Theming
+
+Because of how this project is built, it is very easy to tweak the GUI colours before compiling.
+See [THEMING.md](THEMING.md) for more info on how to do this and examples of themes.
+Also, if you make something cool, feel free to open a pull request to add your themes to [THEMING.md](THEMING.md).
+
 ## Disclaimer
 
-I have very minimal experience with GUI programming, so I started this project as an opportunity to gain some. Any improvements/contributions from anyone more experienced than me will be greatly appreciated!
+I have very minimal experience with GUI programming, so I started this project as an opportunity to gain some.
+Any improvements/contributions from anyone more experienced than me will be greatly appreciated!
