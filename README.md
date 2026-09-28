@@ -1,8 +1,12 @@
-# C99Euclid
+# C99Euclid [WIP]
 
 Minimal C99 CLAP Euclidean sequencer with a lightweight X11 GUI
 
 ![screenshot](imgs/C99Euclid.jpeg?raw=true)
+
+## Disclaimer
+
+This project is very much WIP; feel free to test it and let me know if any issues come up.
 
 ## Build
 
